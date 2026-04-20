@@ -1,0 +1,155 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// =======================
+// ENUMS
+// =======================
+
+enum UserRole {
+  CUSTOMER
+  PROVIDER
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum NotificationType {
+  OTP_SENT
+  PASSWORD_CHANGED
+  PASSWORD_RESET
+  ACCOUNT_BLOCKED
+  ACCOUNT_VERIFIED
+  LOGIN_ALERT
+  GENERAL
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  BLOCK
+  UNBLOCK
+  VERIFY
+  PASSWORD_CHANGE
+  PASSWORD_RESET
+}
+
+// =======================
+// USER
+// =======================
+
+model User {
+  id            String        @id @default(uuid())
+  fullName      String
+  email         String        @unique
+  address       String?
+  passwordHash  String?
+  googleId      String?       @unique
+  phoneNumber   String?
+  profileImage  String?
+  role          UserRole
+  status        AccountStatus @default(PENDING)
+  emailVerified Boolean       @default(false)
+  lastLoginAt   DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  customer      Customer?
+  provider      ServiceProvider?
+  bankAccount   BankAccount?
+  refreshTokens RefreshToken[]
+  notifications Notification[]
+  auditLogs     AuditLog[]    @relation("UserAuditLogs")
+}
+
+model Customer {
+  id            String @id @default(uuid())
+  loyaltyPoints Int    @default(0)
+  userId        String @unique
+  user          User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ServiceProvider {
+  id              String         @id @default(uuid())
+  businessName    String
+  businessLicense String
+  description     String?
+  approvalStatus  ApprovalStatus @default(PENDING)
+  userId          String         @unique
+  user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model BankAccount {
+  id                String  @id @default(uuid())
+  iban              String
+  bankName          String
+  accountHolderName String
+  isVerified        Boolean @default(false)
+  userId            String  @unique
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// =======================
+// NOTIFICATIONS
+// =======================
+
+model Notification {
+  id        String           @id @default(uuid())
+  title     String
+  body      String
+  type      NotificationType
+  isRead    Boolean          @default(false)
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime         @default(now())
+
+  @@index([userId])
+}
+
+// =======================
+// AUDIT LOG
+// =======================
+
+model AuditLog {
+  id         String      @id @default(uuid())
+  action     AuditAction
+  entity     String
+  entityId   String?
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  userAgent  String?
+  userId     String?
+  user       User?       @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt  DateTime    @default(now())
+
+  @@index([userId])
+  @@index([entity])
+  @@index([createdAt])
+}

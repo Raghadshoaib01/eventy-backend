@@ -7,7 +7,23 @@ import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
 
 @Module({
-  imports: [UsersModule, AuthModule,
+  imports: [
+    UsersModule,
+    AuthModule,
+    //all modules above
+    CacheModule.registerAsync({
+      isGlobal: true,
+      useFactory: async (config: ConfigService) => ({
+        store: await redisStore({
+          socket: {
+            host: config.get('redis.host'),
+            port: config.get('redis.port'),
+          },
+          password: config.get('redis.password'),
+        }),
+      }),
+      inject: [ConfigService],
+    }),
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({

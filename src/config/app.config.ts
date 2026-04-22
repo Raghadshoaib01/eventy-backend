@@ -8,7 +8,9 @@ export default registerAs('app', () => ({
   jwtRefreshExpiration: process.env.JWT_REFRESH_EXPIRATION || '7d',
   googleClientId: process.env.GOOGLE_CLIENT_ID,
   googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  googleCallbackUrl: process.env.GOOGLE_CALLBACK_URL || 'http://localhost:3000/api/v1/auth/google/callback',
+  googleCallbackUrl:
+    process.env.GOOGLE_CALLBACK_URL ||
+    'http://localhost:3000/api/v1/auth/google/callback',
   sendgridApiKey: process.env.SENDGRID_API_KEY,
   sendgridFromEmail: process.env.SENDGRID_FROM_EMAIL || 'noreply@eventy.com',
   cloudinaryCloudName: process.env.CLOUDINARY_CLOUD_NAME,

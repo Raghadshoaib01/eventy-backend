@@ -1,41 +1,61 @@
-// هذا الملف هو القلب — كل تعامل مع OTP يمر منه
+import { BadRequestException, Inject, Injectable } from '@nestjs/common';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
+import { generateOtpCode } from 'src/common/helpers/otp.helper';
+import {
+  REDIS_OTP_PREFIX,
+  OTP_TTL_SECONDS,
+} from 'src/common/constants/redis.constants';
 
-import { BadRequestException, Inject, Injectable } from "@nestjs/common";
-import { generateOtpCode } from "src/common/helpers/otp.helper";
-import { CACHE_MANAGER } from "@nestjs/cache-manager";
-import { Cache } from "cache-manager";
-import { OTP_TTL_SECONDS, REDIS_OTP_PREFIX } from "src/common/constants/redis.constants";
 @Injectable()
 export class OtpService {
-
   constructor(
     @Inject(CACHE_MANAGER)
-    private cache: Cache          // من @nestjs/cache-manager
+    private cache: Cache,
   ) {}
 
-  // يُستدعى من: auth.service → signup(), requestReset()
+  /**
+   * يُستدعى من: auth.service → signup(), requestReset()
+   * يولّد كود OTP ويحفظه في Redis
+   */
   async sendOtp(email: string): Promise<void> {
     const code = generateOtpCode();
-    const key  = `${REDIS_OTP_PREFIX}${email}`;   // 'otp:sarah@email.com'
+    const key = `${REDIS_OTP_PREFIX}${email}`;
 
-    await this.cache.set(key, code, OTP_TTL_SECONDS);
-    // TODO: await this.emailService.sendOtpEmail(email, code);
+    // حفظ في Redis مع TTL تلقائي
+    await this.cache.set(key, code, OTP_TTL_SECONDS * 1000); // بالميلي ثانية
+
+    // TODO: إرسال الإيميل الفعلي
+    console.log(`📧 OTP sent to ${email}: ${code}`);
   }
 
-  // يُستدعى من: auth.service → verifyOtp(), confirmReset()
+  /**
+   * يُستدعى من: auth.service → verifyOtp(), confirmReset()
+   * يتحقق من صحة الكود ويحذفه بعد الاستخدام
+   */
   async verifyOtp(email: string, code: string): Promise<boolean> {
-    const key     = `${REDIS_OTP_PREFIX}${email}`;
-    const stored  = await this.cache.get<string>(key);
+    const key = `${REDIS_OTP_PREFIX}${email}`;
+    const stored = await this.cache.get<string>(key);
 
-    if (!stored)        throw new BadRequestException('OTP expired or not found');
-    if (stored !== code) throw new BadRequestException('Invalid OTP');
+    if (!stored) {
+      throw new BadRequestException('OTP expired or not found');
+    }
 
-    await this.cache.del(key);   // يحذف بعد نجاح التحقق مرة واحدة فقط
+    if (stored !== code) {
+      throw new BadRequestException('Invalid OTP code');
+    }
+
+    // حذف الكود بعد التحقق الناجح (one-time use)
+    await this.cache.del(key);
     return true;
   }
 
-  // يُستدعى من: auth.service → resendOtp()
+  /**
+   * يُستدعى من: auth.service → resendOtp()
+   * يحذف الكود القديم قبل إرسال واحد جديد
+   */
   async deleteOtp(email: string): Promise<void> {
-    await this.cache.del(`${REDIS_OTP_PREFIX}${email}`);
+    const key = `${REDIS_OTP_PREFIX}${email}`;
+    await this.cache.del(key);
   }
 }

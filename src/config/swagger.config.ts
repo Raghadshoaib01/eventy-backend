@@ -6,9 +6,9 @@ export function setupSwagger(app: INestApplication): void {
     .setTitle('Eventy API')
     .setDescription(
       `## Eventy Backend RESTful API\n\n` +
-      `Full authentication and user management API.\n\n` +
-      `### Authentication\n` +
-      `Use the **Authorize** button and enter: \`Bearer <your-jwt-token>\``,
+        `Full authentication and user management API.\n\n` +
+        `### Authentication\n` +
+        `Use the **Authorize** button and enter: \`Bearer <your-jwt-token>\``,
     )
     .setVersion('1.0')
     .addTag('Auth', 'Authentication endpoints')

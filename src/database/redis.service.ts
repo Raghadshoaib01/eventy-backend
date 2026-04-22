@@ -1,4 +1,9 @@
-import { Injectable, OnModuleInit, OnModuleDestroy, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  OnModuleInit,
+  OnModuleDestroy,
+  Logger,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
@@ -10,7 +15,9 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    this.client = new Redis(this.configService.get<string>('REDIS_URL', 'redis://localhost:6379'));
+    this.client = new Redis(
+      this.configService.get<string>('REDIS_URL', 'redis://localhost:6379'),
+    );
     this.client.on('connect', () => this.logger.log('Redis connected'));
     this.client.on('error', (err) => this.logger.error('Redis error', err));
   }
@@ -50,7 +57,11 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   }
 
   // OTP helpers
-  async saveOtp(userId: string, otp: string, ttlSeconds: number): Promise<void> {
+  async saveOtp(
+    userId: string,
+    otp: string,
+    ttlSeconds: number,
+  ): Promise<void> {
     await this.set(`otp:${userId}`, otp, ttlSeconds);
   }
 

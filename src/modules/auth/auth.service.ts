@@ -1,16 +1,24 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { UsersService } from '../users/users.service';
 import { OtpService } from './otp.service';
 import { RegisterDto } from './dto/register.dto';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
 import { ResendOtpDto } from './dto/resend-otp.dto';
-import { ConfirmResetPasswordDto } from './dto/reset-password.dto';
+import { ConfirmResetPasswordDto, RequestResetPasswordDto } from './dto/reset-password.dto';
+import { comparePassword, hashPassword } from 'src/common/helpers/hash.helper';
+import { UserRole } from 'src/shared/Enums/role.enum';
+import { LoginDto } from './dto/login.dto';
+import { TokenPair } from 'src/shared/Interfaces/token-pair.interface';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { PrismaService } from 'src/database/prisma.service';
+import { signAccessToken, signRefreshToken } from 'src/common/helpers/token.helper';
 
 @Injectable()
 export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly otpService: OtpService,
+    private readonly prisma: PrismaService,
   ) {}
   // signup → ينشئ مستخدم ويرسل OTP
   async signup(dto: RegisterDto) {
@@ -160,7 +168,7 @@ export class AuthService {
   }
  
   // requestReset → نسيان الباسورد
-  async requestReset(email: string) {
+  async requestReset(dto: RequestResetPasswordDto) {
     // 1. تحقق المستخدم موجود
     // 2. this.otpService.sendOtp(email)
    // 1. التحقق من وجود المستخدم

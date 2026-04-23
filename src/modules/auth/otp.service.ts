@@ -18,7 +18,7 @@ export class OtpService {
    * يُستدعى من: auth.service → signup(), requestReset()
    * يولّد كود OTP ويحفظه في Redis
    */
-  async sendOtp(email: string): Promise<void> {
+  async sendOtp(email: string): Promise<string> {
     const code = generateOtpCode();
     const key = `${REDIS_OTP_PREFIX}${email}`;
 
@@ -27,6 +27,8 @@ export class OtpService {
 
     // TODO: إرسال الإيميل الفعلي
     console.log(`📧 OTP sent to ${email}: ${code}`);
+      return code; // ← نرجع الكود
+
   }
 
   /**

@@ -1,29 +1,22 @@
 import { Module } from '@nestjs/common';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { UsersModule } from './modules/users/users.module';
-import { AuthModule } from './modules/auth/auth.module';
+import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
 import { redisStore } from 'cache-manager-ioredis-yet';
+import { DatabaseModule } from './database/database.module';
+import { UsersModule } from './modules/users/users.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
-    UsersModule,
-    AuthModule,
-    //all modules above
-    CacheModule.registerAsync({
-      isGlobal: true,
-      useFactory: async (config: ConfigService) => ({
-        store: await redisStore({
-          socket: {
-            host: config.get('redis.host'),
-            port: config.get('redis.port'),
-          },
-          password: config.get('redis.password'),
-        }),
-      }),
-      inject: [ConfigService],
-    }),
+    // 1. ConfigModule أول شيء — يحمّل .env ويجعله متاحاً في كل المشروع
+    ConfigModule.forRoot({ isGlobal: true }),
+
+    // 2. DatabaseModule يوفر PrismaService لكل المشروع (@Global)
+    DatabaseModule,
+
+    // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
@@ -33,6 +26,10 @@ import { redisStore } from 'cache-manager-ioredis-yet';
         }),
       }),
     }),
+
+    // 4. Feature Modules
+    UsersModule,
+    AuthModule,
   ],
   controllers: [AppController],
   providers: [AppService],

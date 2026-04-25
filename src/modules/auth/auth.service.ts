@@ -12,6 +12,7 @@ import { TokenPair } from 'src/shared/Interfaces/token-pair.interface';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { PrismaService } from 'src/database/prisma.service';
 import { signAccessToken, signRefreshToken } from 'src/common/helpers/token.helper';
+import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 
 @Injectable()
 export class AuthService {
@@ -19,15 +20,25 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly otpService: OtpService,
     private readonly prisma: PrismaService,
+    private readonly cloudinaryService: CloudinaryService,
   ) {}
   // signup → ينشئ مستخدم ويرسل OTP
-  async signup(dto: RegisterDto) {
+  async signup(dto: RegisterDto, profileImage?: Express.Multer.File) {
     // 1. تحقق من عدم تكرار الإيميل
     const existing = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
     if (existing) {
       throw new ConflictException('Email already registered');
+    }
+
+    // 2. رفع الصورة إن وُجدت
+    let profileImageUrl: string | null = null;
+    if (profileImage) {
+      const uploaded = await this.cloudinaryService.upload(profileImage, {
+        folder: 'eventy/profiles',
+      });
+      profileImageUrl = uploaded.url;
     }
 
     // 2. hash الباسورد
@@ -41,6 +52,7 @@ export class AuthService {
         phoneNumber: dto.phoneNumber,
         address: dto.address,
         passwordHash,
+        profileImage: profileImageUrl,
         role: UserRole.CUSTOMER,
         emailVerified: false,
         customer: {

@@ -7,6 +7,8 @@ import {
   UseGuards,
   Request,
   Get,
+  UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -14,6 +16,8 @@ import {
   ApiResponse,
   ApiBearerAuth,
   ApiBody,
+  ApiExcludeEndpoint,
+  ApiConsumes,
 } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -27,6 +31,7 @@ import {
 } from './dto/reset-password.dto';
 import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
+import { FileInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -35,11 +40,29 @@ export class AuthController {
 
   //1 POST /api/v1/auth/register
   @Post('register')
+  @UseInterceptors(FileInterceptor('profileImage'))
+  @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Register a new customer account' })
+  @ApiBody({
+  schema: {
+    type: 'object',
+    required: ['fullName', 'email', 'phoneNumber', 'password'],
+    properties: {
+      fullName:     { type: 'string', example: 'Sarah Ahmed' },
+      email:        { type: 'string', example: 'sarah@example.com' },
+      phoneNumber:  { type: 'string', example: '+962791234567' },
+      password:     { type: 'string', example: 'Password@123' },
+      address:      { type: 'string', example: '123 Main St' },
+      profileImage: { type: 'string', format: 'binary' },
+    },
+  },
+})
   @ApiResponse({ status: 201, description: 'OTP sent to email' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
-  register(@Body() dto: RegisterDto) {
-    return this.authService.signup(dto);
+  register(@Body() dto: RegisterDto,
+  @UploadedFile() profileImage?: Express.Multer.File,
+) {
+    return this.authService.signup(dto,profileImage);
   }
 
   //2 POST /api/v1/auth/verify-otp
@@ -136,7 +159,8 @@ export class AuthController {
   //11 GET /api/v1/auth/google/callback
   @Get('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
-@UseGuards(GoogleAuthGuard)
+  @UseGuards(GoogleAuthGuard)
+  @ApiExcludeEndpoint() 
   googleCallback(@Request() req) {
     return this.authService.googleLogin(req.user);
   }

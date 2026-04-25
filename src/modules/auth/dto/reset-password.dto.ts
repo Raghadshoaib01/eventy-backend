@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail } from 'class-validator';
+import { IsEmail, IsStrongPassword } from 'class-validator';
 
 // المرحلة الأولى: POST /auth/reset-password/request
 export class RequestResetPasswordDto {
@@ -21,6 +21,7 @@ export class ConfirmResetPasswordDto {
   code: string;
 
   @ApiProperty({ example: '********' })
+  @IsStrongPassword()
   @IsString()
   @MinLength(8)
   newPassword: string;

@@ -4,11 +4,12 @@ import { ValidationPipe } from '@nestjs/common';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { setupSwagger } from './config/swagger.config';
+import { initCloudinary } from './config/cloudinary.config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.setGlobalPrefix('api/v1');
-
+  initCloudinary();
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

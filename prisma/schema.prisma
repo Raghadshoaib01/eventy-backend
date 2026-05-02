@@ -1,16 +1,6 @@
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
-
 // =======================
 // ENUMS
 // =======================
-
 enum UserRole {
   CUSTOMER
   PROVIDER
@@ -52,6 +42,67 @@ enum AuditAction {
   PASSWORD_RESET
 }
 
+enum CapacityUnit {
+  BOOKING
+  ITEM
+  SESSION
+}
+
+enum EventType {
+  WEDDING
+  ENGAGEMENT
+  BABY_SHOWER
+  GRADUATION
+  CONFERENCE
+  BIRTHDAY
+  ALL_EVENTS
+OTHER
+}
+enum DayOfWeek {
+  SUNDAY
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+}
+
+
+enum ServiceStatus {
+  PENDING_APPROVAL
+  PENDING_DETAILS
+  ACTIVE
+  INACTIVE
+  REJECTED
+}
+
+enum FileType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+enum BookingStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+// =======================
+// SERVICE TYPE (بديل enum)
+// =======================
+
+model ServiceType {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  services    Service[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
 // =======================
 // USER
 // =======================
@@ -60,7 +111,9 @@ model User {
   id            String        @id @default(uuid())
   fullName      String
   email         String        @unique
-  address       String?
+  latitude      Float?
+  longitude     Float?
+  locationName  String?
   passwordHash  String?
   googleId      String?       @unique
   phoneNumber   String?
@@ -77,7 +130,8 @@ model User {
   bankAccount   BankAccount?
   refreshTokens RefreshToken[]
   notifications Notification[]
-  auditLogs     AuditLog[]    @relation("UserAuditLogs")
+  auditLogs     AuditLog[]       @relation("UserAuditLogs")
+  bookings      Booking[]
 }
 
 model Customer {
@@ -95,6 +149,237 @@ model ServiceProvider {
   approvalStatus  ApprovalStatus @default(PENDING)
   userId          String         @unique
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services        Service[]
+  bookings        Booking[]
+}
+
+
+// =======================
+// SERVICE
+// =======================
+
+model Service {
+  id              String   @id @default(uuid())
+  providerId      String
+  serviceTypeId   String
+
+  provider        ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  serviceType     ServiceType     @relation(fields: [serviceTypeId], references: [id])
+
+  description     String?
+  latitude        Float?
+  longitude       Float?
+  locationName    String?
+
+  status          ServiceStatus @default(PENDING_APPROVAL)
+
+  isPackaged      Boolean @default(false)
+  rating          Float   @default(0)
+  totalReviews    Int     @default(0)
+
+  minCapacity     Int?
+  maxCapacity     Int?
+  price           Float?
+
+  files           ServiceDetailFile[]
+  eventTypes      ServiceEventType[]
+  subServices     SubService[]
+  availability    ServiceAvailability?
+  workingDays     ServiceWorkingDay[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// =======================
+// FILES
+// =======================
+
+model ServiceDetailFile {
+  id        String   @id @default(uuid())
+  serviceId String
+  fileUrl   String
+  fileType  FileType
+
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  uploadedAt DateTime @default(now())
+}
+
+// =======================
+// EVENT TYPE RELATION
+// =======================
+
+model ServiceEventType {
+  id        String    @id @default(uuid())
+  serviceId String
+  eventType EventType
+
+  service   Service   @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  @@unique([serviceId, eventType])
+}
+
+// =======================
+// SUB SERVICE
+// =======================
+
+model SubService {
+  id              String   @id @default(uuid())
+  serviceId       String
+
+  service         Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  name            String
+  description     String?
+  pricePerUnit    Float
+  unitType        String   @default("unit")
+
+
+  dailyCapacity   Int      @default(1)
+  isAvailable     Boolean  @default(true)
+  isAutoCreated   Boolean  @default(false)
+
+  media           SubServiceMedia[]
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+// =======================
+// SUB SERVICE MEDIA
+// =======================
+
+model SubServiceMedia {
+  id            String   @id @default(uuid())
+  subServiceId  String
+  url           String
+  type          FileType
+
+  subService    SubService @relation(fields: [subServiceId], references: [id], onDelete: Cascade)
+
+  createdAt     DateTime @default(now())
+}
+
+// =======================
+// AVAILABILITY
+// =======================
+
+model ServiceAvailability {
+  id            String   @id @default(uuid())
+  serviceId     String   @unique
+
+  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  workFromTime  String
+  workToTime    String
+  hasSlots      Boolean  @default(false)
+
+  timeSlots     TimeSlot[]
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// =======================
+// WORKING DAYS
+// =======================
+
+model ServiceWorkingDay {
+  id         String    @id @default(uuid())
+availabilityId  String
+  dayOfWeek  DayOfWeek
+
+  availability   ServiceAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+
+@@unique([availabilityId, dayOfWeek])
+}
+
+// =======================
+// TIME SLOTS
+// =======================
+
+model TimeSlot {
+  id             String   @id @default(uuid())
+  availabilityId String
+
+  availability   ServiceAvailability @relation(fields: [availabilityId], references: [id], onDelete: Cascade)
+
+  fromTime       String
+  toTime         String
+  capacity       Int @default(1)
+}
+
+
+model Booking {
+  id String @id @default(uuid())
+
+  // 👤 Customer
+  customerId String
+  customer   User   @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  // 🏢 Provider
+  providerId String
+  provider   ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  // 🛎 Service
+  serviceId String
+  service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+
+  // ⏰ TimeSlot 
+  timeSlotId String?
+  timeSlot   TimeSlot? @relation(fields: [timeSlotId], references: [id], onDelete: SetNull)
+
+  // 📅 Event Info
+  eventName      String
+  eventType      EventType
+  eventDate      DateTime
+  eventStartTime String
+  eventEndTime   String
+  eventLocation  String?
+
+  numberOfGuests Int?
+
+  customerNotes   String?
+  providerNotes   String?
+  rejectionReason String?
+
+  totalAmount Float @default(0)
+
+  status BookingStatus @default(PENDING)
+
+  acceptedAt  DateTime?
+  completedAt DateTime?
+  cancelledAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  items BookingItem[]
+
+  @@index([customerId])
+  @@index([serviceId])
+  @@index([providerId]) // ⬅️ مهم
+}
+
+model BookingItem {
+  id String @id @default(uuid())
+
+  bookingId String
+  booking   Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  subServiceId String
+  subService   SubService @relation(fields: [subServiceId], references: [id], onDelete: Cascade)
+
+  quantity   Int   @default(1)
+  unitPrice  Float
+  totalPrice Float
+
+  createdAt DateTime @default(now())
+
+  @@index([bookingId])
+  @@index([subServiceId])
 }
 
 model BankAccount {
@@ -138,17 +423,17 @@ model Notification {
 // =======================
 
 model AuditLog {
-  id         String      @id @default(uuid())
-  action     AuditAction
-  entity     String
-  entityId   String?
-  oldValue   Json?
-  newValue   Json?
-  ipAddress  String?
-  userAgent  String?
-  userId     String?
-  user       User?       @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
-  createdAt  DateTime    @default(now())
+  id        String      @id @default(uuid())
+  action    AuditAction
+  entity    String
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+  ipAddress String?
+  userAgent String?
+  userId    String?
+  user      User?       @relation("UserAuditLogs", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt DateTime    @default(now())
 
   @@index([userId])
   @@index([entity])

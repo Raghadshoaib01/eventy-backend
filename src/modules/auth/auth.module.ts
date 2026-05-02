@@ -13,5 +13,6 @@ import { RedisModule } from 'src/database/redis.module';
   imports: [UsersModule, PassportModule,RedisModule],
   providers: [AuthService, OtpService, JwtStrategy, GoogleStrategy,CloudinaryService],
   controllers: [AuthController],
+  exports:[OtpService]
 })
 export class AuthModule {}

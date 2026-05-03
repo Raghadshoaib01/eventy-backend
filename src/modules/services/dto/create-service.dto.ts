@@ -15,7 +15,7 @@ import {
 import { Type } from 'class-transformer';
 import { ServiceType } from '@prisma/client';
 import { EventType } from '@prisma/client';
-import { CapacityUnit } from '@prisma/client';
+//import { CapacityUnit } from '@prisma/client';
 
 class TimeSlotDto {
   @ApiProperty({ example: '09:00' })
@@ -35,9 +35,9 @@ class TimeSlotDto {
 }
 
 export class CreateServiceDto {
-  @ApiProperty({ enum: ServiceType, example: ServiceType.FOOD })
-  @IsEnum(ServiceType)
-  serviceType: ServiceType;
+  @ApiProperty({example: 1 })
+  // @IsEnum(ServiceType)
+  serviceTypeId: ServiceType;
 
   @ApiProperty({
     enum: EventType,
@@ -69,9 +69,9 @@ export class CreateServiceDto {
   @Min(1)
   dailyCapacity: number;
 
-  @ApiProperty({ enum: CapacityUnit, example: CapacityUnit.BOOKING })
-  @IsEnum(CapacityUnit)
-  capacityUnit: CapacityUnit;
+ // @ApiProperty({ enum: CapacityUnit, example: CapacityUnit.BOOKING })
+  //@IsEnum(CapacityUnit)
+  //capacityUnit: CapacityUnit;
 
   // Optional: Time Slots
   @ApiProperty({ example: false, required: false })

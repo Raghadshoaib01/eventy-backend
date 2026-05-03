@@ -25,6 +25,27 @@ async function main() {
   });
 
   console.log('✅ Super Admin created:', admin.email);
+  const serviceTypes = [
+    'FOOD',
+    'PHOTOGRAPHY',
+    'FAVORS',
+    'DECORATION',
+    'HALL',
+    'SOUND',
+  ];
+  for (const name of serviceTypes) {
+    await prisma.serviceType.upsert({
+      where: { name },
+      update: {}, // لا نعدل شيء إذا موجود
+      create: {
+        name,
+        description: `${name} service`,
+      },
+    });
+  }
+
+  console.log('✅ ServiceTypes seeded successfully');
+
 }
 
 main()

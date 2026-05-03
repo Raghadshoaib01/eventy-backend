@@ -87,9 +87,9 @@ export class RegisterProviderDto {
     enum: ServiceType,
     description: 'Service type - determines approval workflow'
   })
-  @IsEnum(ServiceType)
+ // @IsEnum(['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'])
   @IsNotEmpty()
-  serviceType: ServiceType;
+serviceTypeId: string;
 
   @ApiProperty({ 
     example: ['WEDDING', 'ENGAGEMENT', 'BIRTHDAY'],

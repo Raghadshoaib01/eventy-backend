@@ -3,6 +3,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { UpdateProviderProfileDto, UpdateBankAccountDto } from '../providers/dto/Update provider profile.dto';
 
+
 @Injectable()
 export class ProviderProfileService {
   constructor(
@@ -29,7 +30,7 @@ export class ProviderProfileService {
                 },
                 subServices: {
                   include: {
-                    media: true,
+                  media: true,
                   },
                 },
               },
@@ -190,16 +191,16 @@ export class ProviderProfileService {
     const services = await this.prisma.service.findMany({
       where: { providerId: user.provider.id },
       include: {
-        media: true,
+        files: true,
         availability: {
           include: {
             timeSlots: true,
+          
           },
         },
         subServices: {
           include: {
-            media: true,
-          },
+          media: true,        },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -230,7 +231,7 @@ export class ProviderProfileService {
         providerId: user.provider.id,
       },
       include: {
-        media: true,
+        files: true,
         availability: {
           include: {
             timeSlots: true,
@@ -273,10 +274,10 @@ export class ProviderProfileService {
         providerId: user.provider.id,
       },
       include: {
-        media: true,
+        files: true,
         subServices: {
           include: {
-            media: true,
+          media: true,
           },
         },
       },
@@ -293,7 +294,7 @@ export class ProviderProfileService {
 
     // حذف جميع الملفات من Cloudinary
     // 1. Service Media
-    for (const media of service.media) {
+    for (const files of service.files) {
       await this.cloudinaryService.delete(media.publicId);
     }
 

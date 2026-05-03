@@ -57,8 +57,11 @@ export class ProviderAuthService {
     const passwordHash = await hashPassword(dto.password);
 
     // 4. تحديد إذا كانت الخدمة HALL/SOUND (تحتاج price مباشرة)
-    const isHallOrSound = ['HALL', 'SOUND'].includes(dto.serviceType);
+const serviceType = await this.prisma.serviceType.findUnique({
+  where: { id: dto.serviceTypeId },
+});
 
+const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
     // 5. إنشاء User + ServiceProvider + Service (خدمة أولية)
     await this.prisma.user.create({
       data: {
@@ -70,30 +73,34 @@ export class ProviderAuthService {
         role: UserRole.PROVIDER,
         emailVerified: false,
         status: 'PENDING',
+        locationName: dto.locationName,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
 
         // إنشاء ServiceProvider
         provider: {
           create: {
             businessName: dto.businessName,
             businessLicense: dto.businessLicense,
-            locationName: dto.locationName,
-            latitude: dto.latitude,
-            longitude: dto.longitude,
             approvalStatus: 'PENDING',
 
             // إنشاء Service (خدمة أولية - بدون تفاصيل)
             services: {
               create: {
-                serviceType: dto.serviceType as any,
-                eventTypes: dto.eventTypes as any[],
+                       serviceTypeId: dto.serviceTypeId,
                 description: dto.description,
                 isCompleted: false, // سيتم إكمالها بعد القبول
-                approvalStatus: 'PENDING',
+                approvalStatus: 'PENDING_DETAILS',
                 
                 // For HALL/SOUND: نحفظ القيم الأولية
                 minCapacity: isHallOrSound ? dto.minCapacity : null,
                 maxCapacity: isHallOrSound ? dto.maxCapacity : null,
                 price: isHallOrSound ? dto.price : null,
+                eventTypes: {
+                create: dto.eventTypes.map(et => ({
+                eventType: et
+      }))
+    }
               },
             },
           },
@@ -124,7 +131,7 @@ export class ProviderAuthService {
     // 1. البحث عن المستخدم
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: { provider: true },
+      include: {provider: true },
     });
 
     if (!user || !user.passwordHash || user.role !== UserRole.PROVIDER) {
@@ -173,10 +180,14 @@ export class ProviderAuthService {
       include: { 
         provider: {
           include: {
-            services: true,
+            services: {
+          include: {
+            serviceType: true,
           },
         },
+        },
       },
+    },
     });
 
     if (!user || !user.provider) {
@@ -188,7 +199,7 @@ export class ProviderAuthService {
 
     return {
       approvalStatus,
-      serviceType: firstService?.serviceType,
+      serviceType: firstService?.serviceType?.name,
       isServiceCompleted: firstService?.isCompleted ?? false,
       message:
         approvalStatus === 'APPROVED'

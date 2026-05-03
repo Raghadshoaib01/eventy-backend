@@ -22,6 +22,8 @@ export class ProvidersService {
             services: {
               include: {
                 subServices: true,
+                serviceType:true,
+                eventTypes: true,
               },
             },
           },
@@ -67,10 +69,10 @@ export class ProvidersService {
       servicesCount: user.provider.services.length,
       services: user.provider.services.map((s) => ({
         id: s.id,
-        serviceType: s.serviceType,
+        serviceType: s.serviceType.name,
         eventTypes: s.eventTypes,
         description: s.description,
-        isActive: s.isActive,
+        //isActive: s.approvalStatus,
         approvalStatus: s.approvalStatus,
         subServicesCount: s.subServices.length,
       })),

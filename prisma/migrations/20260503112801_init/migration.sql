@@ -14,19 +14,33 @@ CREATE TYPE "NotificationType" AS ENUM ('OTP_SENT', 'PASSWORD_CHANGED', 'PASSWOR
 CREATE TYPE "AuditAction" AS ENUM ('CREATE', 'UPDATE', 'DELETE', 'LOGIN', 'LOGOUT', 'BLOCK', 'UNBLOCK', 'VERIFY', 'PASSWORD_CHANGE', 'PASSWORD_RESET');
 
 -- CreateEnum
-CREATE TYPE "EventType" AS ENUM ('WEDDING', 'ENGAGEMENT', 'BABY_SHOWER', 'GRADUATION', 'CONFERENCE', 'BIRTHDAY', 'ALL_EVENTS');
-
--- CreateEnum
 CREATE TYPE "CapacityUnit" AS ENUM ('BOOKING', 'ITEM', 'SESSION');
 
 -- CreateEnum
-CREATE TYPE "ServiceStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+CREATE TYPE "EventType" AS ENUM ('WEDDING', 'ENGAGEMENT', 'BABY_SHOWER', 'GRADUATION', 'CONFERENCE', 'BIRTHDAY', 'ALL_EVENTS', 'OTHER');
+
+-- CreateEnum
+CREATE TYPE "DayOfWeek" AS ENUM ('SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY');
+
+-- CreateEnum
+CREATE TYPE "ServiceStatus" AS ENUM ('PENDING_APPROVAL', 'PENDING_DETAILS', 'ACTIVE', 'INACTIVE', 'REJECTED');
+
+-- CreateEnum
+CREATE TYPE "FileType" AS ENUM ('IMAGE', 'VIDEO', 'DOCUMENT');
 
 -- CreateEnum
 CREATE TYPE "BookingStatus" AS ENUM ('PENDING', 'ACCEPTED', 'REJECTED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED');
 
--- CreateEnum
-CREATE TYPE "ServiceType" AS ENUM ('FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND');
+-- CreateTable
+CREATE TABLE "ServiceType" (
+    "id" TEXT NOT NULL,
+    "name" TEXT NOT NULL,
+    "description" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ServiceType_pkey" PRIMARY KEY ("id")
+);
 
 -- CreateTable
 CREATE TABLE "User" (
@@ -75,27 +89,42 @@ CREATE TABLE "ServiceProvider" (
 CREATE TABLE "Service" (
     "id" TEXT NOT NULL,
     "providerId" TEXT NOT NULL,
-    "serviceType" "ServiceType" NOT NULL,
-    "eventTypes" "EventType"[],
+    "serviceTypeId" TEXT NOT NULL,
+    "description" TEXT,
     "latitude" DOUBLE PRECISION,
     "longitude" DOUBLE PRECISION,
     "locationName" TEXT,
-    "availableFrom" TEXT NOT NULL,
-    "availableTo" TEXT NOT NULL,
-    "dailyCapacity" INTEGER NOT NULL DEFAULT 5,
-    "capacityUnit" "CapacityUnit" NOT NULL DEFAULT 'BOOKING',
-    "useTimeSlots" BOOLEAN NOT NULL DEFAULT false,
+    "status" "ServiceStatus" NOT NULL DEFAULT 'PENDING_APPROVAL',
+    "isPackaged" BOOLEAN NOT NULL DEFAULT false,
+    "rating" DOUBLE PRECISION NOT NULL DEFAULT 0,
+    "totalReviews" INTEGER NOT NULL DEFAULT 0,
     "minCapacity" INTEGER,
     "maxCapacity" INTEGER,
     "price" DOUBLE PRECISION,
-    "isActive" BOOLEAN NOT NULL DEFAULT true,
-    "isClosedToday" BOOLEAN NOT NULL DEFAULT false,
-    "description" TEXT,
-    "approvalStatus" "ServiceStatus" NOT NULL DEFAULT 'PENDING',
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "Service_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceDetailFile" (
+    "id" TEXT NOT NULL,
+    "serviceId" TEXT NOT NULL,
+    "fileUrl" TEXT NOT NULL,
+    "fileType" "FileType" NOT NULL,
+    "uploadedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "ServiceDetailFile_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceEventType" (
+    "id" TEXT NOT NULL,
+    "serviceId" TEXT NOT NULL,
+    "eventType" "EventType" NOT NULL,
+
+    CONSTRAINT "ServiceEventType_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -104,13 +133,61 @@ CREATE TABLE "SubService" (
     "serviceId" TEXT NOT NULL,
     "name" TEXT NOT NULL,
     "description" TEXT,
-    "unitPrice" DOUBLE PRECISION NOT NULL,
-    "photos" TEXT[],
-    "videos" TEXT[],
+    "pricePerUnit" DOUBLE PRECISION NOT NULL,
+    "unitType" TEXT NOT NULL DEFAULT 'unit',
+    "dailyCapacity" INTEGER NOT NULL DEFAULT 1,
+    "isAvailable" BOOLEAN NOT NULL DEFAULT true,
+    "isAutoCreated" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
     CONSTRAINT "SubService_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "SubServiceMedia" (
+    "id" TEXT NOT NULL,
+    "subServiceId" TEXT NOT NULL,
+    "url" TEXT NOT NULL,
+    "type" "FileType" NOT NULL,
+    "publicId" TEXT,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT "SubServiceMedia_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceAvailability" (
+    "id" TEXT NOT NULL,
+    "serviceId" TEXT NOT NULL,
+    "workFromTime" TEXT NOT NULL,
+    "workToTime" TEXT NOT NULL,
+    "hasSlots" BOOLEAN NOT NULL DEFAULT false,
+    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedAt" TIMESTAMP(3) NOT NULL,
+
+    CONSTRAINT "ServiceAvailability_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "ServiceWorkingDay" (
+    "id" TEXT NOT NULL,
+    "serviceId" TEXT,
+    "availabilityId" TEXT NOT NULL,
+    "dayOfWeek" "DayOfWeek" NOT NULL,
+
+    CONSTRAINT "ServiceWorkingDay_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "TimeSlot" (
+    "id" TEXT NOT NULL,
+    "availabilityId" TEXT NOT NULL,
+    "fromTime" TEXT NOT NULL,
+    "toTime" TEXT NOT NULL,
+    "capacity" INTEGER NOT NULL DEFAULT 1,
+
+    CONSTRAINT "TimeSlot_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -152,18 +229,6 @@ CREATE TABLE "BookingItem" (
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "BookingItem_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "TimeSlot" (
-    "id" TEXT NOT NULL,
-    "serviceId" TEXT NOT NULL,
-    "startTime" TEXT NOT NULL,
-    "endTime" TEXT NOT NULL,
-    "capacity" INTEGER NOT NULL DEFAULT 1,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "TimeSlot_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -219,6 +284,9 @@ CREATE TABLE "AuditLog" (
 );
 
 -- CreateIndex
+CREATE UNIQUE INDEX "ServiceType_name_key" ON "ServiceType"("name");
+
+-- CreateIndex
 CREATE UNIQUE INDEX "User_email_key" ON "User"("email");
 
 -- CreateIndex
@@ -229,6 +297,15 @@ CREATE UNIQUE INDEX "Customer_userId_key" ON "Customer"("userId");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ServiceProvider_userId_key" ON "ServiceProvider"("userId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ServiceEventType_serviceId_eventType_key" ON "ServiceEventType"("serviceId", "eventType");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ServiceAvailability_serviceId_key" ON "ServiceAvailability"("serviceId");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "ServiceWorkingDay_availabilityId_dayOfWeek_key" ON "ServiceWorkingDay"("availabilityId", "dayOfWeek");
 
 -- CreateIndex
 CREATE INDEX "Booking_customerId_idx" ON "Booking"("customerId");
@@ -273,7 +350,31 @@ ALTER TABLE "ServiceProvider" ADD CONSTRAINT "ServiceProvider_userId_fkey" FOREI
 ALTER TABLE "Service" ADD CONSTRAINT "Service_providerId_fkey" FOREIGN KEY ("providerId") REFERENCES "ServiceProvider"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
+ALTER TABLE "Service" ADD CONSTRAINT "Service_serviceTypeId_fkey" FOREIGN KEY ("serviceTypeId") REFERENCES "ServiceType"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceDetailFile" ADD CONSTRAINT "ServiceDetailFile_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceEventType" ADD CONSTRAINT "ServiceEventType_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
 ALTER TABLE "SubService" ADD CONSTRAINT "SubService_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "SubServiceMedia" ADD CONSTRAINT "SubServiceMedia_subServiceId_fkey" FOREIGN KEY ("subServiceId") REFERENCES "SubService"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceAvailability" ADD CONSTRAINT "ServiceAvailability_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceWorkingDay" ADD CONSTRAINT "ServiceWorkingDay_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "ServiceWorkingDay" ADD CONSTRAINT "ServiceWorkingDay_availabilityId_fkey" FOREIGN KEY ("availabilityId") REFERENCES "ServiceAvailability"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "TimeSlot" ADD CONSTRAINT "TimeSlot_availabilityId_fkey" FOREIGN KEY ("availabilityId") REFERENCES "ServiceAvailability"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Booking" ADD CONSTRAINT "Booking_customerId_fkey" FOREIGN KEY ("customerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -292,9 +393,6 @@ ALTER TABLE "BookingItem" ADD CONSTRAINT "BookingItem_bookingId_fkey" FOREIGN KE
 
 -- AddForeignKey
 ALTER TABLE "BookingItem" ADD CONSTRAINT "BookingItem_subServiceId_fkey" FOREIGN KEY ("subServiceId") REFERENCES "SubService"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "TimeSlot" ADD CONSTRAINT "TimeSlot_serviceId_fkey" FOREIGN KEY ("serviceId") REFERENCES "Service"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "BankAccount" ADD CONSTRAINT "BankAccount_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

@@ -7,7 +7,7 @@ import {
   IsNumber,
   IsBoolean,
 } from 'class-validator';
-import { CapacityUnit } from '@prisma/client';
+// import { CapacityUnit } from '@prisma/client';
 
 enum EventType {
   WEDDING = 'WEDDING',
@@ -65,9 +65,9 @@ export class UpdateServiceDto {
     required: false
   })
 
-  @IsOptional()
-  @IsEnum(CapacityUnit)
-  capacityUnit?: CapacityUnit;
+  // @IsOptional()
+  // @IsEnum(CapacityUnit)
+  // capacityUnit?: CapacityUnit;
 
   @ApiProperty({ example: false, required: false })
   @IsOptional()

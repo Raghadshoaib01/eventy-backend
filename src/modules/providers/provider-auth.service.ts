@@ -2,6 +2,7 @@ import {
   BadRequestException, 
   ConflictException, 
   Injectable, 
+  NotFoundException, 
   UnauthorizedException 
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
@@ -55,11 +56,16 @@ export class ProviderAuthService {
 
     // 3. Hash الباسورد
     const passwordHash = await hashPassword(dto.password);
-
+// ========== خطوة 4: التحقق من نوع الخدمة ==========
+  
+  // 💡 يتأكد أن الـ UUID موجود في الـ Database
     // 4. تحديد إذا كانت الخدمة HALL/SOUND (تحتاج price مباشرة)
 const serviceType = await this.prisma.serviceType.findUnique({
   where: { id: dto.serviceTypeId },
 });
+if (!serviceType) {
+    throw new NotFoundException('Service type not found');
+  }
 
 const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
     // 5. إنشاء User + ServiceProvider + Service (خدمة أولية)
@@ -215,22 +221,22 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
   /**
    * تفعيل البريد الإلكتروني للـ Provider بعد OTP
    */
-  async activateProviderEmail(email: string) {
-    const user = await this.prisma.user.update({
-      where: { email },
-      data: {
-        emailVerified: true,
-        status: 'ACTIVE',
-      },
-    });
+  // async activateProviderEmail(email: string) {
+  //   const user = await this.prisma.user.update({
+  //     where: { email },
+  //     data: {
+  //       emailVerified: true,
+  //       status: 'ACTIVE',
+  //     },
+  //   });
 
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
+  //   const tokens = await this.generateTokens(user.id, user.email, user.role);
 
-    return {
-      ...tokens,
-      approvalStatus: 'PENDING', // ينتظر موافقة الـ Admin
-    };
-  }
+  //   return {
+  //     ...tokens,
+  //     approvalStatus: 'PENDING', // ينتظر موافقة الـ Admin
+  //   };
+  // }
 
   /**
    * Helper: توليد Tokens

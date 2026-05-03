@@ -37,49 +37,54 @@ export class ProviderAuthController {
     summary: 'Register new service provider (3 steps in one request)',
     description: 'Step 1: Account Info | Step 2: Business Info + Location (Map) | Step 3: First Service Info (no sub-services for halls and djs)'
   })
-  @ApiBody({
-    schema: {
-      type: 'object',
-      required: [
-        'fullName', 'email', 'phoneNumber', 'password',
-        'businessName', 'businessLicense', 
-        //'iban', 'bankName', 'accountHolderName',
-        'serviceType', 'eventTypes', 
-        'availableFrom', 'availableTo', 'dailyCapacity', 'capacityUnit'
-      ],
-      properties: {
-        // Step 1: Account
-        fullName: { type: 'string', example: 'Ahmad Mohammad' },
-        email: { type: 'string', example: 'ahmad@alnoor.com' },
-        phoneNumber: { type: 'string', example: '+962791234567' },
-        password: { type: 'string', example: 'Password@123' },
-        locationName: {type: 'string', example: '123 Main St'},
-        longitude:    {type: 'Number', example: '35.9106'},
-        latitude:     {type: 'Number', example: '35.9106'},
-        // Step 2: Business
-        businessName: { type: 'string', example: 'Al-Noor Catering' },
-        businessLicense: { type: 'string', example: 'CR-12345678' },
-        //iban: { type: 'string', example: 'JO00 0000 0000 0000 0000 0000 00' },
-        //bankName: { type: 'string', example: 'Arab Bank' },
-        //accountHolderName: { type: 'string', example: 'Ahmad Mohammad' },
+  @ApiBody({ type: RegisterProviderDto }) 
+//   @ApiBody({
+//     schema: {
+//       type: 'object',
+//       required: [
+//         'fullName', 'email', 'phoneNumber', 'password',
+//         'businessName', 'businessLicense', 
+//         //'iban', 'bankName', 'accountHolderName',
+//         'serviceType', 'eventTypes', 
+//         //'availableFrom', 'availableTo', 'dailyCapacity', 'capacityUnit'
+//       ],
+//       properties: {
+//         // Step 1: Account
+//         fullName: { type: 'string', example: 'Ahmad Mohammad' },
+//         email: { type: 'string', example: 'ahmad@alnoor.com' },
+//         phoneNumber: { type: 'string', example: '+962791234567' },
+//         password: { type: 'string', example: 'Password@123' },
+//         locationName: {type: 'string', example: '123 Main St'},
+//         longitude:    {type: 'Number', example: '35.9106'},
+//         latitude:     {type: 'Number', example: '35.9106'},
+//         // Step 2: Business
+//         businessName: { type: 'string', example: 'Al-Noor Catering' },
+//         businessLicense: { type: 'string', example: 'CR-12345678' },
+//         //iban: { type: 'string', example: 'JO00 0000 0000 0000 0000 0000 00' },
+//         //bankName: { type: 'string', example: 'Arab Bank' },
+//         //accountHolderName: { type: 'string', example: 'Ahmad Mohammad' },
         
-        // Step 3: Service
-        serviceType: { type: 'string', enum: ['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'] },
-        eventTypes: { type: 'array', items: { type: 'string' }, example: ['WEDDING', 'ENGAGEMENT'] },
-        description: { type: 'string', example: 'Premium catering service' },
-        availableFrom: { type: 'string', example: '08:00' },
-        availableTo: { type: 'string', example: '23:00' },
-        dailyCapacity: { type: 'number', example: 5 },
-        capacityUnit: { type: 'string', enum: ['BOOKING', 'ITEM', 'SESSION'], example: 'BOOKING' },
+//         // Step 3: Service
+//  serviceTypeId: { 
+//         type: 'string', 
+//         example: '0c20ea51-abc5-46e7-aa1a-1d07cf7a148a',
+//         description: 'Get this from GET /service-types'
+//       },
+//         eventTypes: { type: 'array', items: { type: 'string' }, example: ['WEDDING', 'ENGAGEMENT'] },
+//         description: { type: 'string', example: 'Premium catering service' },
+//         // availableFrom: { type: 'string', example: '08:00' },
+//         // availableTo: { type: 'string', example: '23:00' },
+//         // dailyCapacity: { type: 'number', example: 5 },
+//         // capacityUnit: { type: 'string', enum: ['BOOKING', 'ITEM', 'SESSION'], example: 'BOOKING' },
         
-        // Optional
-        minCapacity: { type: 'number', example: 50 },
-        maxCapacity: { type: 'number', example: 500 },
-        price: { type: 'number', example: 2000 },
-        profileImage: { type: 'string', format: 'binary' },
-      },
-    },
-  })
+//         // Optional
+//          minCapacity: { type: 'number', example: 50 },
+//         maxCapacity: { type: 'number', example: 500 },
+//         price: { type: 'number', example: 2000 },
+//        profileImage: { type: 'string', format: 'binary' },
+//       },
+//     },
+//   })
   @ApiResponse({ status: 201, description: 'OTP sent to email' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async registerProvider(

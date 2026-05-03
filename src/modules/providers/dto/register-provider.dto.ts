@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
@@ -83,22 +83,39 @@ export class RegisterProviderDto {
 
   // ========== STEP 3: Initial Service Info (معلومات أولية فقط) ==========
   @ApiProperty({ 
-    example: 'FOOD',
-    enum: ServiceType,
-    description: 'Service type - determines approval workflow'
+    example: 'uuid-of-food-service-type',
+    description: 'Service Type UUID (Get from /service-types endpoint)',
   })
  // @IsEnum(['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'])
   @IsNotEmpty()
 serviceTypeId: string;
 
+  // @ApiProperty({ 
+  //   example: ['WEDDING', 'ENGAGEMENT', 'BIRTHDAY'],
+  //   enum: EventType,
+  //   isArray: true
+  // })
+  // @IsArray()
+  // @IsEnum(EventType, { each: true })
+  // eventTypes: EventType[];
+  
   @ApiProperty({ 
-    example: ['WEDDING', 'ENGAGEMENT', 'BIRTHDAY'],
-    enum: EventType,
-    isArray: true
-  })
-  @IsArray()
-  @IsEnum(EventType, { each: true })
-  eventTypes: EventType[];
+  example: ['WEDDING', 'ENGAGEMENT'],
+  enum: EventType,
+  isArray: true
+})
+@Transform(({ value }) => {
+  if (Array.isArray(value)) return value;
+
+  try {
+    return JSON.parse(value); // إذا جاية كـ JSON string
+  } catch {
+    return value.split(','); // fallback
+  }
+})
+@IsArray()
+@IsEnum(EventType, { each: true })
+eventTypes: EventType[];
 
   @ApiProperty({ 
     example: 'Premium Arabic and international catering for all events.'
@@ -125,4 +142,11 @@ serviceTypeId: string;
   @IsOptional()
   @Type(() => Number)
   price?: number;
+
+  @ApiProperty({
+  type: 'string',
+  format: 'binary',
+  required: false,
+})
+profileImage?: any;
 }

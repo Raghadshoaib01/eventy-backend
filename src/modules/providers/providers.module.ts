@@ -8,6 +8,6 @@ import { OtpService } from '../auth/otp.service';
 @Module({
   
   controllers: [ProvidersController, ProviderAuthController],
-   providers: [ProviderAuthService],
+   providers: [ProviderAuthService,OtpService],
 })
 export class ProvidersModule {}

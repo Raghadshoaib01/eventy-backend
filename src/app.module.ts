@@ -15,13 +15,13 @@ import { ProviderBookingsService } from './modules/bookings/provider-bookings.se
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
-import { ServiceService } from './details/modules/services/services/service/service.service';
-import { ServiceService } from './details/modules/services/service/service.service';
-import { ServiceService } from './details/service/service.service';
-import { ServiceService } from './modules/services/service details.service';
-import { ProviderService } from './modules/providers/provider profail services.service';
-import { ProviderController } from './modules/providers/provider profail.controller';
-import { ProviderController } from './modules/providers/provider profail.controller';
+// import { ServiceService } from './details/modules/services/services/service/service.service';
+// import { ServiceService } from './details/modules/services/service/service.service';
+// import { ServiceService } from './details/service/service.service';
+// import { ServiceService } from './modules/services/service details.service';
+// import { ProviderService } from './modules/providers/provider profail services.service';
+// import { ProviderController } from './modules/providers/provider profail.controller';
+// import { ProviderController } from './modules/providers/provider profail.controller';
 
 
 @Module({
@@ -53,7 +53,9 @@ import { ProviderController } from './modules/providers/provider profail.control
     NotificationsModule,
     BookingsModule,
   ],
-  controllers: [AppController, ProviderBookingsController, ProviderController],
-  providers: [AppService, ProviderBookingsService, ServiceService, ProviderService],
+  controllers: [AppController, ProviderBookingsController, //ProviderController 
+  ],
+  providers: [AppService, ProviderBookingsService,// ServiceService, ProviderService
+  ],
 })
 export class AppModule {}

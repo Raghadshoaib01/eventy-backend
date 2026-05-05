@@ -35,7 +35,7 @@ class TimeSlotDto {
 }
 
 export class CreateServiceDto {
-  @ApiProperty({example: 1 })
+  @ApiProperty({ example: 1 })
   // @IsEnum(ServiceType)
   serviceTypeId: ServiceType;
 
@@ -69,7 +69,7 @@ export class CreateServiceDto {
   @Min(1)
   dailyCapacity: number;
 
- // @ApiProperty({ enum: CapacityUnit, example: CapacityUnit.BOOKING })
+  // @ApiProperty({ enum: CapacityUnit, example: CapacityUnit.BOOKING })
   //@IsEnum(CapacityUnit)
   //capacityUnit: CapacityUnit;
 

@@ -20,20 +20,20 @@ enum EventType {
 }
 
 export class UpdateServiceDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: ['WEDDING', 'ENGAGEMENT'],
     enum: EventType,
     isArray: true,
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsArray()
   @IsEnum(EventType, { each: true })
   eventTypes?: EventType[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'Updated description',
-    required: false
+    required: false,
   })
   @IsOptional()
   @IsString()
@@ -59,16 +59,15 @@ export class UpdateServiceDto {
   @IsNumber()
   dailyCapacity?: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'BOOKING',
     enum: ['BOOKING', 'ITEM', 'SESSION'],
-    required: false
+    required: false,
   })
 
   // @IsOptional()
   // @IsEnum(CapacityUnit)
   // capacityUnit?: CapacityUnit;
-
   @ApiProperty({ example: false, required: false })
   @IsOptional()
   @IsBoolean()

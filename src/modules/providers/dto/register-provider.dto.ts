@@ -68,13 +68,13 @@ export class RegisterProviderDto {
   @IsString()
   @IsOptional()
   locationName?: string;
-  
+
   @ApiProperty({ example: 31.9539, required: false })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   latitude?: number;
-  
+
   @ApiProperty({ example: 35.9106, required: false })
   @IsOptional()
   @Type(() => Number)
@@ -82,15 +82,15 @@ export class RegisterProviderDto {
   longitude?: number;
 
   // ========== STEP 3: Initial Service Info (معلومات أولية فقط) ==========
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'uuid-of-food-service-type',
     description: 'Service Type UUID (Get from /service-types endpoint)',
   })
- // @IsEnum(['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'])
+  // @IsEnum(['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'])
   @IsNotEmpty()
-serviceTypeId: string;
+  serviceTypeId: string;
 
-  // @ApiProperty({ 
+  // @ApiProperty({
   //   example: ['WEDDING', 'ENGAGEMENT', 'BIRTHDAY'],
   //   enum: EventType,
   //   isArray: true
@@ -98,27 +98,27 @@ serviceTypeId: string;
   // @IsArray()
   // @IsEnum(EventType, { each: true })
   // eventTypes: EventType[];
-  
-  @ApiProperty({ 
-  example: ['WEDDING', 'ENGAGEMENT'],
-  enum: EventType,
-  isArray: true
-})
-@Transform(({ value }) => {
-  if (Array.isArray(value)) return value;
 
-  try {
-    return JSON.parse(value); // إذا جاية كـ JSON string
-  } catch {
-    return value.split(','); // fallback
-  }
-})
-@IsArray()
-@IsEnum(EventType, { each: true })
-eventTypes: EventType[];
+  @ApiProperty({
+    example: ['WEDDING', 'ENGAGEMENT'],
+    enum: EventType,
+    isArray: true,
+  })
+  @Transform(({ value }) => {
+    if (Array.isArray(value)) return value;
 
-  @ApiProperty({ 
-    example: 'Premium Arabic and international catering for all events.'
+    try {
+      return JSON.parse(value); // إذا جاية كـ JSON string
+    } catch {
+      return value.split(','); // fallback
+    }
+  })
+  @IsArray()
+  @IsEnum(EventType, { each: true })
+  eventTypes: EventType[];
+
+  @ApiProperty({
+    example: 'Premium Arabic and international catering for all events.',
   })
   @IsString()
   @IsNotEmpty()
@@ -144,9 +144,9 @@ eventTypes: EventType[];
   price?: number;
 
   @ApiProperty({
-  type: 'string',
-  format: 'binary',
-  required: false,
-})
-profileImage?: any;
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  profileImage?: any;
 }

@@ -25,12 +25,16 @@ enum DayOfWeek {
 export class TimeSlotDto {
   @ApiProperty({ example: '09:00' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: 'Invalid time format. Use HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
+    message: 'Invalid time format. Use HH:mm',
+  })
   startTime: string;
 
   @ApiProperty({ example: '12:00' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: 'Invalid time format. Use HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
+    message: 'Invalid time format. Use HH:mm',
+  })
   endTime: string;
 
   @ApiProperty({ example: 2 })
@@ -46,12 +50,16 @@ export class ServiceAvailabilityDto {
 
   @ApiProperty({ example: '08:00' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: 'Invalid time format. Use HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
+    message: 'Invalid time format. Use HH:mm',
+  })
   workFromTime: string;
 
   @ApiProperty({ example: '22:00' })
   @IsString()
-  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: 'Invalid time format. Use HH:mm' })
+  @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
+    message: 'Invalid time format. Use HH:mm',
+  })
   workToTime: string;
 
   @ApiProperty({ example: 5 })
@@ -86,9 +94,9 @@ export class CompleteServiceDetailsDto {
   @IsOptional()
   maxCapacity?: number;
 
-  @ApiProperty({ 
-    type: [ServiceAvailabilityDto],
-    description: 'Availability schedule per day'
+  @ApiProperty({
+    type:ServiceAvailabilityDto,
+    description: 'Availability schedule per day',
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -117,9 +125,9 @@ export class CompleteHallSoundDetailsDto {
   @IsNotEmpty()
   price: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     type: [ServiceAvailabilityDto],
-    description: 'Availability schedule per day'
+    description: 'Availability schedule per day',
   })
   @IsArray()
   @ValidateNested({ each: true })

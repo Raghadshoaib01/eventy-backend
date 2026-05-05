@@ -8,11 +8,11 @@ import {
   MinLength,
   Matches,
   IsStrongPassword,
-  IsNumber
+  IsNumber,
 } from 'class-validator';
 
 export class RegisterDto {
-  @ApiProperty({ example: 'Sarah Ahmed' })  
+  @ApiProperty({ example: 'Sarah Ahmed' })
   @IsString()
   @IsNotEmpty()
   fullName: string;
@@ -32,21 +32,21 @@ export class RegisterDto {
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })
   password: string;
-  
+
   @ApiProperty({ example: '123 Main St' })
   @IsString()
   @IsOptional()
   locationName?: string;
-  
-@ApiProperty({ example: 31.9539 }) // مثال: Amman latitude
-@IsOptional()
-@Type(() => Number)
-@IsNumber()
-latitude?: number;
 
-@ApiProperty({ example: 35.9106 }) // مثال: Amman longitude
-@IsOptional()
-@Type(() => Number)
-@IsNumber()
-longitude?: number;
+  @ApiProperty({ example: 31.9539 }) // مثال: Amman latitude
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  latitude?: number;
+
+  @ApiProperty({ example: 35.9106 }) // مثال: Amman longitude
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  longitude?: number;
 }

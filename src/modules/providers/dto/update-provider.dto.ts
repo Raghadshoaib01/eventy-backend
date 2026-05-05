@@ -21,7 +21,10 @@ export class UpdateProviderDto {
   @IsString()
   businessName?: string;
 
-  @ApiProperty({ example: 'We provide premium catering services...', required: false })
+  @ApiProperty({
+    example: 'We provide premium catering services...',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   description?: string;

@@ -15,14 +15,14 @@ import { ProviderBookingsService } from './modules/bookings/provider-bookings.se
 import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
+import { ProviderProfileController } from './modules/providers/provider profail.controller';
 // import { ServiceService } from './details/modules/services/services/service/service.service';
 // import { ServiceService } from './details/modules/services/service/service.service';
 // import { ServiceService } from './details/service/service.service';
 // import { ServiceService } from './modules/services/service details.service';
-// import { ProviderService } from './modules/providers/provider profail services.service';
+import { ProviderProfileService } from './modules/providers/provider profail services.service';
 // import { ProviderController } from './modules/providers/provider profail.controller';
 // import { ProviderController } from './modules/providers/provider profail.controller';
-
 
 @Module({
   imports: [
@@ -43,7 +43,6 @@ import { BookingsModule } from './modules/bookings/bookings.module';
       }),
     }),
 
-
     UsersModule,
     AuthModule,
     SharedModule,
@@ -53,9 +52,15 @@ import { BookingsModule } from './modules/bookings/bookings.module';
     NotificationsModule,
     BookingsModule,
   ],
-  controllers: [AppController, ProviderBookingsController, //ProviderController 
+  controllers: [
+    AppController,
+    ProviderBookingsController,
+    ProviderProfileController, //ProviderController
   ],
-  providers: [AppService, ProviderBookingsService,// ServiceService, ProviderService
+  providers: [
+    AppService,
+    ProviderBookingsService,
+    ProviderProfileService, // ServiceService, ProviderService
   ],
 })
 export class AppModule {}

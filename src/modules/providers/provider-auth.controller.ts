@@ -33,58 +33,59 @@ export class ProviderAuthController {
   @Post('register')
   @UseInterceptors(FileInterceptor('profileImage'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Register new service provider (3 steps in one request)',
-    description: 'Step 1: Account Info | Step 2: Business Info + Location (Map) | Step 3: First Service Info (no sub-services for halls and djs)'
+    description:
+      'Step 1: Account Info | Step 2: Business Info + Location (Map) | Step 3: First Service Info (no sub-services for halls and djs)',
   })
-  @ApiBody({ type: RegisterProviderDto }) 
-//   @ApiBody({
-//     schema: {
-//       type: 'object',
-//       required: [
-//         'fullName', 'email', 'phoneNumber', 'password',
-//         'businessName', 'businessLicense', 
-//         //'iban', 'bankName', 'accountHolderName',
-//         'serviceType', 'eventTypes', 
-//         //'availableFrom', 'availableTo', 'dailyCapacity', 'capacityUnit'
-//       ],
-//       properties: {
-//         // Step 1: Account
-//         fullName: { type: 'string', example: 'Ahmad Mohammad' },
-//         email: { type: 'string', example: 'ahmad@alnoor.com' },
-//         phoneNumber: { type: 'string', example: '+962791234567' },
-//         password: { type: 'string', example: 'Password@123' },
-//         locationName: {type: 'string', example: '123 Main St'},
-//         longitude:    {type: 'Number', example: '35.9106'},
-//         latitude:     {type: 'Number', example: '35.9106'},
-//         // Step 2: Business
-//         businessName: { type: 'string', example: 'Al-Noor Catering' },
-//         businessLicense: { type: 'string', example: 'CR-12345678' },
-//         //iban: { type: 'string', example: 'JO00 0000 0000 0000 0000 0000 00' },
-//         //bankName: { type: 'string', example: 'Arab Bank' },
-//         //accountHolderName: { type: 'string', example: 'Ahmad Mohammad' },
-        
-//         // Step 3: Service
-//  serviceTypeId: { 
-//         type: 'string', 
-//         example: '0c20ea51-abc5-46e7-aa1a-1d07cf7a148a',
-//         description: 'Get this from GET /service-types'
-//       },
-//         eventTypes: { type: 'array', items: { type: 'string' }, example: ['WEDDING', 'ENGAGEMENT'] },
-//         description: { type: 'string', example: 'Premium catering service' },
-//         // availableFrom: { type: 'string', example: '08:00' },
-//         // availableTo: { type: 'string', example: '23:00' },
-//         // dailyCapacity: { type: 'number', example: 5 },
-//         // capacityUnit: { type: 'string', enum: ['BOOKING', 'ITEM', 'SESSION'], example: 'BOOKING' },
-        
-//         // Optional
-//          minCapacity: { type: 'number', example: 50 },
-//         maxCapacity: { type: 'number', example: 500 },
-//         price: { type: 'number', example: 2000 },
-//        profileImage: { type: 'string', format: 'binary' },
-//       },
-//     },
-//   })
+  @ApiBody({ type: RegisterProviderDto })
+  //   @ApiBody({
+  //     schema: {
+  //       type: 'object',
+  //       required: [
+  //         'fullName', 'email', 'phoneNumber', 'password',
+  //         'businessName', 'businessLicense',
+  //         //'iban', 'bankName', 'accountHolderName',
+  //         'serviceType', 'eventTypes',
+  //         //'availableFrom', 'availableTo', 'dailyCapacity', 'capacityUnit'
+  //       ],
+  //       properties: {
+  //         // Step 1: Account
+  //         fullName: { type: 'string', example: 'Ahmad Mohammad' },
+  //         email: { type: 'string', example: 'ahmad@alnoor.com' },
+  //         phoneNumber: { type: 'string', example: '+962791234567' },
+  //         password: { type: 'string', example: 'Password@123' },
+  //         locationName: {type: 'string', example: '123 Main St'},
+  //         longitude:    {type: 'Number', example: '35.9106'},
+  //         latitude:     {type: 'Number', example: '35.9106'},
+  //         // Step 2: Business
+  //         businessName: { type: 'string', example: 'Al-Noor Catering' },
+  //         businessLicense: { type: 'string', example: 'CR-12345678' },
+  //         //iban: { type: 'string', example: 'JO00 0000 0000 0000 0000 0000 00' },
+  //         //bankName: { type: 'string', example: 'Arab Bank' },
+  //         //accountHolderName: { type: 'string', example: 'Ahmad Mohammad' },
+
+  //         // Step 3: Service
+  //  serviceTypeId: {
+  //         type: 'string',
+  //         example: '0c20ea51-abc5-46e7-aa1a-1d07cf7a148a',
+  //         description: 'Get this from GET /service-types'
+  //       },
+  //         eventTypes: { type: 'array', items: { type: 'string' }, example: ['WEDDING', 'ENGAGEMENT'] },
+  //         description: { type: 'string', example: 'Premium catering service' },
+  //         // availableFrom: { type: 'string', example: '08:00' },
+  //         // availableTo: { type: 'string', example: '23:00' },
+  //         // dailyCapacity: { type: 'number', example: 5 },
+  //         // capacityUnit: { type: 'string', enum: ['BOOKING', 'ITEM', 'SESSION'], example: 'BOOKING' },
+
+  //         // Optional
+  //          minCapacity: { type: 'number', example: 50 },
+  //         maxCapacity: { type: 'number', example: 500 },
+  //         price: { type: 'number', example: 2000 },
+  //        profileImage: { type: 'string', format: 'binary' },
+  //       },
+  //     },
+  //   })
   @ApiResponse({ status: 201, description: 'OTP sent to email' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async registerProvider(
@@ -98,8 +99,8 @@ export class ProviderAuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Provider login' })
-  @ApiResponse({ 
-    status: 200, 
+  @ApiResponse({
+    status: 200,
     description: 'Returns tokens + approvalStatus',
     schema: {
       example: {
@@ -109,10 +110,10 @@ export class ProviderAuthController {
         data: {
           accessToken: 'eyJhbGc...',
           refreshToken: 'eyJhbGc...',
-          approvalStatus: 'PENDING' // or 'APPROVED' or 'REJECTED'
-        }
-      }
-    }
+          approvalStatus: 'PENDING', // or 'APPROVED' or 'REJECTED'
+        },
+      },
+    },
   })
   async loginProvider(@Body() dto: LoginDto) {
     return this.providerAuthService.loginProvider(dto);
@@ -122,11 +123,12 @@ export class ProviderAuthController {
   @Get('check-approval')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('JWT-auth')
-  @ApiOperation({ 
+  @ApiOperation({
     summary: 'Check provider approval status',
-    description: 'Used after OTP verification to check if provider can access dashboard'
+    description:
+      'Used after OTP verification to check if provider can access dashboard',
   })
-  @ApiResponse({ 
+  @ApiResponse({
     status: 200,
     schema: {
       example: {
@@ -136,10 +138,10 @@ export class ProviderAuthController {
         data: {
           approvalStatus: 'APPROVED',
           message: 'Your account is approved',
-          canAccessDashboard: true
-        }
-      }
-    }
+          canAccessDashboard: true,
+        },
+      },
+    },
   })
   async checkApproval(@Request() req) {
     return this.providerAuthService.checkApprovalStatus(req.user.sub);

@@ -26,7 +26,7 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const message =
       typeof exceptionResponse === 'string'
         ? exceptionResponse
-        : (exceptionResponse as any)?.message ?? 'Something went wrong';
+        : ((exceptionResponse as any)?.message ?? 'Something went wrong');
 
     response.status(status).json({
       success: false,

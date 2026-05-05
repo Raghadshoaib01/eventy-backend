@@ -21,9 +21,9 @@ export class PrismaService
   //   const adapter = new PrismaPg(pool);
   //   super({ adapter, log: ['error', 'warn'] });
   // }
-constructor() {
-  super({ log: ['error', 'warn'] });
-}
+  constructor() {
+    super({ log: ['error', 'warn'] });
+  }
   async onModuleInit() {
     await this.$connect();
     this.logger.log('Database connected successfully');

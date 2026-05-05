@@ -45,7 +45,6 @@ async function main() {
   }
 
   console.log('✅ ServiceTypes seeded successfully');
-
 }
 
 main()

@@ -1,9 +1,9 @@
-import { 
-  BadRequestException, 
-  ConflictException, 
-  Injectable, 
-  NotFoundException, 
-  UnauthorizedException 
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
@@ -12,7 +12,10 @@ import { RegisterProviderDto } from './dto/register-provider.dto';
 import { LoginDto } from '../auth/dto/login.dto';
 import { hashPassword, comparePassword } from 'src/common/helpers/hash.helper';
 import { UserRole } from 'src/shared/Enums/role.enum';
-import { signAccessToken, signRefreshToken } from 'src/common/helpers/token.helper';
+import {
+  signAccessToken,
+  signRefreshToken,
+} from 'src/common/helpers/token.helper';
 
 @Injectable()
 export class ProviderAuthService {
@@ -56,18 +59,18 @@ export class ProviderAuthService {
 
     // 3. Hash الباسورد
     const passwordHash = await hashPassword(dto.password);
-// ========== خطوة 4: التحقق من نوع الخدمة ==========
-  
-  // 💡 يتأكد أن الـ UUID موجود في الـ Database
-    // 4. تحديد إذا كانت الخدمة HALL/SOUND (تحتاج price مباشرة)
-const serviceType = await this.prisma.serviceType.findUnique({
-  where: { id: dto.serviceTypeId },
-});
-if (!serviceType) {
-    throw new NotFoundException('Service type not found');
-  }
+    // ========== خطوة 4: التحقق من نوع الخدمة ==========
 
-const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
+    // 💡 يتأكد أن الـ UUID موجود في الـ Database
+    // 4. تحديد إذا كانت الخدمة HALL/SOUND (تحتاج price مباشرة)
+    const serviceType = await this.prisma.serviceType.findUnique({
+      where: { id: dto.serviceTypeId },
+    });
+    if (!serviceType) {
+      throw new NotFoundException('Service type not found');
+    }
+
+    const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
     // 5. إنشاء User + ServiceProvider + Service (خدمة أولية)
     await this.prisma.user.create({
       data: {
@@ -93,20 +96,20 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
             // إنشاء Service (خدمة أولية - بدون تفاصيل)
             services: {
               create: {
-                       serviceTypeId: dto.serviceTypeId,
+                serviceTypeId: dto.serviceTypeId,
                 description: dto.description,
                 isCompleted: false, // سيتم إكمالها بعد القبول
                 approvalStatus: 'PENDING_DETAILS',
-                
+
                 // For HALL/SOUND: نحفظ القيم الأولية
                 minCapacity: isHallOrSound ? dto.minCapacity : null,
                 maxCapacity: isHallOrSound ? dto.maxCapacity : null,
                 price: isHallOrSound ? dto.price : null,
                 eventTypes: {
-                create: dto.eventTypes.map(et => ({
-                eventType: et
-      }))
-    }
+                  create: dto.eventTypes.map((et) => ({
+                    eventType: et,
+                  })),
+                },
               },
             },
           },
@@ -121,8 +124,9 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
     const isDev = process.env.NODE_ENV !== 'production';
 
     return {
-      message: 'Registration successful. Please verify your email with the OTP sent.',
-      data: { 
+      message:
+        'Registration successful. Please verify your email with the OTP sent.',
+      data: {
         email: dto.email,
         ...(isDev && { otpCode }),
       },
@@ -137,7 +141,7 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
     // 1. البحث عن المستخدم
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
-      include: {provider: true },
+      include: { provider: true },
     });
 
     if (!user || !user.passwordHash || user.role !== UserRole.PROVIDER) {
@@ -183,17 +187,17 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
   async checkApprovalStatus(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: { 
+      include: {
         provider: {
           include: {
             services: {
-          include: {
-            serviceType: true,
+              include: {
+                serviceType: true,
+              },
+            },
           },
         },
-        },
       },
-    },
     });
 
     if (!user || !user.provider) {
@@ -211,10 +215,11 @@ const isHallOrSound = ['HALL', 'SOUND'].includes(serviceType?.name ?? '');
         approvalStatus === 'APPROVED'
           ? 'Your account is approved'
           : approvalStatus === 'REJECTED'
-          ? 'Your account was rejected'
-          : 'Your account is under review',
+            ? 'Your account was rejected'
+            : 'Your account is under review',
       canAccessDashboard: approvalStatus === 'APPROVED',
-      needsCompletion: approvalStatus === 'APPROVED' && !firstService?.isCompleted,
+      needsCompletion:
+        approvalStatus === 'APPROVED' && !firstService?.isCompleted,
     };
   }
 

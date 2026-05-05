@@ -10,9 +10,15 @@ import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { RedisModule } from 'src/database/redis.module';
 
 @Module({
-  imports: [UsersModule, PassportModule,RedisModule],
-  providers: [AuthService, OtpService, JwtStrategy, GoogleStrategy,CloudinaryService],
+  imports: [UsersModule, PassportModule, RedisModule],
+  providers: [
+    AuthService,
+    OtpService,
+    JwtStrategy,
+    GoogleStrategy,
+    CloudinaryService,
+  ],
   controllers: [AuthController],
-  exports:[OtpService]
+  exports: [OtpService],
 })
 export class AuthModule {}

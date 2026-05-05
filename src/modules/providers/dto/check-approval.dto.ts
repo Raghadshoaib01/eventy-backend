@@ -1,4 +1,3 @@
-
 import { ApprovalStatus } from '@prisma/client';
 
 export class CheckApprovalResponseDto {

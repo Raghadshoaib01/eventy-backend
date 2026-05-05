@@ -9,6 +9,8 @@ import {
   Get,
   UseInterceptors,
   UploadedFile,
+  Patch,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -32,6 +34,7 @@ import {
 import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { UpdateProfileDto } from './dto/update-profile.dto';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -44,28 +47,29 @@ export class AuthController {
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Register a new customer account' })
   @ApiBody({
-  schema: {
-    type: 'object',
-    required: ['fullName', 'email', 'phoneNumber', 'password'],
-    properties: {
-      fullName:     { type: 'string', example: 'Sarah Ahmed' },
-      email:        { type: 'string', example: 'sarah@example.com' },
-      phoneNumber:  { type: 'string', example: '+962791234567' },
-      password:     { type: 'string', example: 'Password@123' },
-      locationName: {type: 'string', example: '123 Main St'},
-      longitude:    {type: 'Number', example: '35.9106'},
-      latitude:     {type: 'Number', example: '35.9106'},
-      //address:      { type: 'string', example: '123 Main St' },
-      profileImage: { type: 'string', format: 'binary' },
+    schema: {
+      type: 'object',
+      required: ['fullName', 'email', 'phoneNumber', 'password'],
+      properties: {
+        fullName: { type: 'string', example: 'Sarah Ahmed' },
+        email: { type: 'string', example: 'sarah@example.com' },
+        phoneNumber: { type: 'string', example: '+962791234567' },
+        password: { type: 'string', example: 'Password@123' },
+        locationName: { type: 'string', example: '123 Main St' },
+        longitude: { type: 'Number', example: '35.9106' },
+        latitude: { type: 'Number', example: '35.9106' },
+        //address:      { type: 'string', example: '123 Main St' },
+        profileImage: { type: 'string', format: 'binary' },
+      },
     },
-  },
-})
+  })
   @ApiResponse({ status: 201, description: 'OTP sent to email' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
-  register(@Body() dto: RegisterDto,
-  @UploadedFile() profileImage?: Express.Multer.File,
-) {
-    return this.authService.signup(dto,profileImage);
+  register(
+    @Body() dto: RegisterDto,
+    @UploadedFile() profileImage?: Express.Multer.File,
+  ) {
+    return this.authService.signup(dto, profileImage);
   }
 
   //2 POST /api/v1/auth/verify-otp
@@ -113,7 +117,7 @@ export class AuthController {
   //6 POST /api/v1/auth/logout
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @ApiBearerAuth('JWT-auth')//swagger tag
+  @ApiBearerAuth('JWT-auth') //swagger tag
   @ApiOperation({ summary: 'Logout and invalidate refresh token' })
   @ApiBody({
     schema: { properties: { refreshToken: { type: 'string' } } },
@@ -128,10 +132,7 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @ApiBearerAuth('JWT-auth')
   @ApiOperation({ summary: 'Change password (authenticated user)' })
-  changePassword(
-    @Request() req,
-    @Body() dto: ChangePasswordDto,
-  ) {
+  changePassword(@Request() req, @Body() dto: ChangePasswordDto) {
     return this.authService.changePassword(req.user.sub, dto);
   }
 
@@ -153,7 +154,7 @@ export class AuthController {
 
   //10 GET /api/v1/auth/google
   @Get('google')
-@UseGuards(GoogleAuthGuard)
+  @UseGuards(GoogleAuthGuard)
   @ApiOperation({ summary: 'Redirect to Google OAuth' })
   googleAuth() {
     // Guard يتعامل معها
@@ -163,8 +164,53 @@ export class AuthController {
   @Get('google/callback')
   @ApiOperation({ summary: 'Google OAuth callback' })
   @UseGuards(GoogleAuthGuard)
-  @ApiExcludeEndpoint() 
+  @ApiExcludeEndpoint()
   googleCallback(@Request() req) {
     return this.authService.googleLogin(req.user);
   }
+
+@Patch('profile')
+@UseInterceptors(FileInterceptor('profileImage'))
+@ApiConsumes('multipart/form-data')
+@ApiBearerAuth()
+@ApiOperation({ summary: 'Update user profile information' })
+@ApiBody({
+  schema: {
+    type: 'object',
+    properties: {
+      fullName: { type: 'string', example: 'Sarah Ahmed' },
+      phoneNumber: { type: 'string', example: '+962791234567' },
+      locationName: { type: 'string', example: 'Amman - Jordan' },
+      latitude: { type: 'number', example: 31.9539 },
+      longitude: { type: 'number', example: 35.9106 },
+      profileImage: {
+        type: 'string',
+        format: 'binary',
+      },
+    },
+  },
+})
+@ApiResponse({
+  status: 200,
+  description: 'Profile updated successfully',
+})
+@ApiResponse({
+  status: 404,
+  description: 'User not found',
+})
+@ApiResponse({
+  status: 400,
+  description: 'No data provided or no changes detected',
+})
+async updateProfile(
+  @Req() req,
+  @Body() dto:UpdateProfileDto,
+  @UploadedFile() profileImage?: Express.Multer.File,
+) {
+  return this.authService.updateUserProfile(
+    req.user.id,
+    dto,
+    profileImage,
+  );
+}
 }

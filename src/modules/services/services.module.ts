@@ -6,7 +6,8 @@ import { ServicesController } from './controllers/services.controller';
 // import {ServiceDetailsController}from './controllers/servicedetails.controller';
 
 @Module({
-  controllers: [ServicesController,
+  controllers: [
+    ServicesController,
     //SubServiceController,
     // ServiceDetailsController
   ],

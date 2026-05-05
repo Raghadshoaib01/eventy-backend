@@ -15,12 +15,16 @@ export function IsStrongPassword(options?: ValidationOptions) {
       validator: {
         validate(value: string) {
           if (typeof value !== 'string') return false;
-          const hasMin8       = value.length >= 8;
-          const hasUppercase  = /[A-Z]/.test(value);
-          const hasLowercase  = /[a-z]/.test(value);
-          const hasNumber     = /[0-9]/.test(value);
-          const hasSpecial    = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(value);
-          return hasMin8 && hasUppercase && hasLowercase && hasNumber && hasSpecial;
+          const hasMin8 = value.length >= 8;
+          const hasUppercase = /[A-Z]/.test(value);
+          const hasLowercase = /[a-z]/.test(value);
+          const hasNumber = /[0-9]/.test(value);
+          const hasSpecial = /[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?]/.test(
+            value,
+          );
+          return (
+            hasMin8 && hasUppercase && hasLowercase && hasNumber && hasSpecial
+          );
         },
       },
     });

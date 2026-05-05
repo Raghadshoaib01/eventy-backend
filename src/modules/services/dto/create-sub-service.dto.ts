@@ -1,6 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 
 enum UnitType {
   BOOKING = 'BOOKING',
@@ -26,10 +32,10 @@ export class CreateSubServiceDto {
   @IsNotEmpty()
   pricePerUnit: number;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'PERSON',
     enum: UnitType,
-    description: 'Unit type for pricing'
+    description: 'Unit type for pricing',
   })
   @IsEnum(UnitType)
   @IsNotEmpty()

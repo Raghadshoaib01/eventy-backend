@@ -27,8 +27,7 @@ export class OtpService {
 
     // TODO: إرسال الإيميل الفعلي
     console.log(`📧 OTP sent to ${email}: ${code}`);
-      return code; // ← نرجع الكود
-
+    return code; // ← نرجع الكود
   }
 
   /**

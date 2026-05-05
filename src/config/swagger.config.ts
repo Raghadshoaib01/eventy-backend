@@ -14,6 +14,7 @@ export function setupSwagger(app: INestApplication): void {
     .addTag('Auth', 'Authentication endpoints')
     .addTag('Users', 'User management endpoints')
     .addTag('Upload', 'File upload endpoints')
+    .addTag('Provider Auth', 'Provider profile endpoints')
     .addBearerAuth(
       {
         type: 'http',

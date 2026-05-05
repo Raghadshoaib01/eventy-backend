@@ -40,9 +40,9 @@ export class CloudinaryService {
   };
 
   private readonly maxSizes: Record<FileType, number> = {
-    image:    5  * 1024 * 1024,  // 5MB
-    video:    100 * 1024 * 1024, // 100MB
-    document: 10  * 1024 * 1024, // 10MB
+    image: 5 * 1024 * 1024, // 5MB
+    video: 100 * 1024 * 1024, // 100MB
+    document: 10 * 1024 * 1024, // 10MB
   };
 
   // ── رفع ملف ─────────────────────────────────────────────
@@ -66,11 +66,11 @@ export class CloudinaryService {
             reject(new BadRequestException(`Upload failed: ${error.message}`));
           } else {
             resolve({
-              url:      result.secure_url,
+              url: result.secure_url,
               publicId: result.public_id,
               fileType: result.resource_type,
-              size:     result.bytes,
-              format:   result.format,
+              size: result.bytes,
+              format: result.format,
             });
           }
         },
@@ -112,9 +112,7 @@ export class CloudinaryService {
     const maxSize = this.maxSizes[fileType];
     if (file.size > maxSize) {
       const maxMB = maxSize / (1024 * 1024);
-      throw new BadRequestException(
-        `File too large. Max size: ${maxMB}MB`,
-      );
+      throw new BadRequestException(`File too large. Max size: ${maxMB}MB`);
     }
   }
 
@@ -132,9 +130,7 @@ export class CloudinaryService {
     if (fileType === 'image') {
       return {
         ...base,
-        transformation: [
-          { quality: 'auto', fetch_format: 'auto' },
-        ],
+        transformation: [{ quality: 'auto', fetch_format: 'auto' }],
       };
     }
 
@@ -142,9 +138,7 @@ export class CloudinaryService {
       return {
         ...base,
         resource_type: 'video' as const,
-        transformation: [
-          { quality: 'auto' },
-        ],
+        transformation: [{ quality: 'auto' }],
       };
     }
 

@@ -19,9 +19,9 @@
 // import { FilesInterceptor } from '@nestjs/platform-express';
 // import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 // // import { ServiceDetailsService } from '../service details.service';
-// import { 
-//   CompleteServiceDetailsDto, 
-//   CompleteHallSoundDetailsDto 
+// import {
+//   CompleteServiceDetailsDto,
+//   CompleteHallSoundDetailsDto
 // } from '../dto/Complete service details.dto'
 
 // @ApiTags('Service Details')
@@ -40,13 +40,13 @@
 //     description: 'Add availability schedule and optional media. After this, you can add sub-services.',
 //   })
 //   @ApiParam({ name: 'serviceId', description: 'Service ID' })
-//   @ApiResponse({ 
-//     status: 200, 
-//     description: 'Service details completed. You can now add sub-services.' 
+//   @ApiResponse({
+//     status: 200,
+//     description: 'Service details completed. You can now add sub-services.'
 //   })
-//   @ApiResponse({ 
-//     status: 400, 
-//     description: 'Account not approved or wrong service type' 
+//   @ApiResponse({
+//     status: 400,
+//     description: 'Account not approved or wrong service type'
 //   })
 //   async completeServiceDetails(
 //     @Request() req,
@@ -72,13 +72,13 @@
 //     description: 'Add capacity, price, availability, and media. No sub-services needed.',
 //   })
 //   @ApiParam({ name: 'serviceId', description: 'Service ID' })
-//   @ApiResponse({ 
-//     status: 200, 
-//     description: 'Hall/Sound service completed successfully' 
+//   @ApiResponse({
+//     status: 200,
+//     description: 'Hall/Sound service completed successfully'
 //   })
-//   @ApiResponse({ 
-//     status: 400, 
-//     description: 'Account not approved, wrong service type, or missing media' 
+//   @ApiResponse({
+//     status: 400,
+//     description: 'Account not approved, wrong service type, or missing media'
 //   })
 //   async completeHallSoundDetails(
 //     @Request() req,

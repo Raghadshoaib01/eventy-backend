@@ -21,12 +21,20 @@ export class UpdateProviderProfileDto {
   @IsString()
   businessName?: string;
 
-  @ApiProperty({ example: 'We provide premium catering services...', required: false })
+  @ApiProperty({
+    example: 'We provide premium catering services...',
+    required: false,
+  })
   @IsOptional()
   @IsString()
   description?: string;
 
   // ========== Location Update ==========
+    @ApiProperty({ example: 'Amman, Jordan', required: false })
+  @IsOptional()
+  @IsString()
+  locationName?: string;
+  
   @ApiProperty({ example: 31.9539, required: false })
   @IsOptional()
   @Type(() => Number)
@@ -39,10 +47,7 @@ export class UpdateProviderProfileDto {
   @IsNumber()
   longitude?: number;
 
-  @ApiProperty({ example: 'Amman, Jordan', required: false })
-  @IsOptional()
-  @IsString()
-  locationName?: string;
+
 }
 
 export class UpdateBankAccountDto {

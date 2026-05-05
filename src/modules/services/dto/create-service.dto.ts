@@ -9,24 +9,23 @@ import {
   IsArray,
   ValidateNested,
   Min,
-  Max,
   IsNumber,
+  IsUUID,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { ServiceType } from '@prisma/client';
 import { EventType } from '@prisma/client';
-//import { CapacityUnit } from '@prisma/client';
 
 class TimeSlotDto {
+  // ✅ نفس Prisma
   @ApiProperty({ example: '09:00' })
   @IsNotEmpty()
   @IsString()
-  startTime: string;
+  fromTime: string;
 
   @ApiProperty({ example: '12:00' })
   @IsNotEmpty()
   @IsString()
-  endTime: string;
+  toTime: string;
 
   @ApiProperty({ example: 1 })
   @IsInt()
@@ -35,10 +34,12 @@ class TimeSlotDto {
 }
 
 export class CreateServiceDto {
-  @ApiProperty({ example: 1 })
-  // @IsEnum(ServiceType)
-  serviceTypeId: ServiceType;
+  // ✅ UUID مطابق Prisma
+  @ApiProperty({ example: 'uuid-of-service-type' })
+  @IsUUID()
+  serviceTypeId: string;
 
+  // ✅ صحيح
   @ApiProperty({
     enum: EventType,
     isArray: true,
@@ -53,31 +54,27 @@ export class CreateServiceDto {
   @IsString()
   description?: string;
 
-  // Availability
+  // ✅ نفس Prisma
   @ApiProperty({ example: '08:00' })
   @IsNotEmpty()
   @IsString()
-  availableFrom: string;
+  workFromTime: string;
 
   @ApiProperty({ example: '23:00' })
   @IsNotEmpty()
   @IsString()
-  availableTo: string;
+  workToTime: string;
 
+  // ⚠️ هذا ليس موجود مباشرة في Service → تستخدمه لاحقًا
   @ApiProperty({ example: 5 })
   @IsInt()
   @Min(1)
   dailyCapacity: number;
 
-  // @ApiProperty({ enum: CapacityUnit, example: CapacityUnit.BOOKING })
-  //@IsEnum(CapacityUnit)
-  //capacityUnit: CapacityUnit;
-
-  // Optional: Time Slots
   @ApiProperty({ example: false, required: false })
   @IsOptional()
   @IsBoolean()
-  useTimeSlots?: boolean;
+  hasSlots?: boolean;
 
   @ApiProperty({ type: [TimeSlotDto], required: false })
   @IsOptional()
@@ -86,7 +83,6 @@ export class CreateServiceDto {
   @Type(() => TimeSlotDto)
   timeSlots?: TimeSlotDto[];
 
-  // For Halls/Sound
   @ApiProperty({ example: 50, required: false })
   @IsOptional()
   @IsInt()

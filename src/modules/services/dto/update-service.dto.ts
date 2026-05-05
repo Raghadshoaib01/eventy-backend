@@ -6,72 +6,45 @@ import {
   IsEnum,
   IsNumber,
   IsBoolean,
+  ValidateNested,
 } from 'class-validator';
-// import { CapacityUnit } from '@prisma/client';
-
-enum EventType {
-  WEDDING = 'WEDDING',
-  ENGAGEMENT = 'ENGAGEMENT',
-  BABY_SHOWER = 'BABY_SHOWER',
-  GRADUATION = 'GRADUATION',
-  CONFERENCE = 'CONFERENCE',
-  BIRTHDAY = 'BIRTHDAY',
-  ALL_EVENTS = 'ALL_EVENTS',
-}
+import { EventType } from '@prisma/client';
+import { Type } from 'class-transformer';
+import { TimeSlotDto } from './Complete service details.dto';
 
 export class UpdateServiceDto {
   @ApiProperty({
-    example: ['WEDDING', 'ENGAGEMENT'],
     enum: EventType,
     isArray: true,
     required: false,
+    example: [EventType.WEDDING, EventType.ENGAGEMENT],
   })
   @IsOptional()
   @IsArray()
   @IsEnum(EventType, { each: true })
   eventTypes?: EventType[];
 
-  @ApiProperty({
-    example: 'Updated description',
-    required: false,
-  })
+  @ApiProperty({ example: 'Updated description', required: false })
   @IsOptional()
   @IsString()
   description?: string;
 
-  @ApiProperty({ example: 500, required: false })
-  @IsOptional()
-  @IsNumber()
-  maxQuantity?: number;
-
+  // ✅ مطابق Prisma
   @ApiProperty({ example: '08:00', required: false })
   @IsOptional()
   @IsString()
-  availableFrom?: string;
+  workFromTime?: string;
 
   @ApiProperty({ example: '23:00', required: false })
   @IsOptional()
   @IsString()
-  availableTo?: string;
+  workToTime?: string;
 
-  @ApiProperty({ example: 5, required: false })
-  @IsOptional()
-  @IsNumber()
-  dailyCapacity?: number;
-
-  @ApiProperty({
-    example: 'BOOKING',
-    enum: ['BOOKING', 'ITEM', 'SESSION'],
-    required: false,
-  })
-
-  // @IsOptional()
-  // @IsEnum(CapacityUnit)
-  // capacityUnit?: CapacityUnit;
+ 
   @ApiProperty({ example: false, required: false })
   @IsOptional()
   @IsBoolean()
-  useTimeSlots?: boolean;
+  hasSlots?: boolean;
 
   @ApiProperty({ example: 50, required: false })
   @IsOptional()
@@ -88,13 +61,9 @@ export class UpdateServiceDto {
   @IsNumber()
   price?: number;
 
-  @ApiProperty({ example: true, required: false })
-  @IsOptional()
-  @IsBoolean()
-  isActive?: boolean;
-
-  @ApiProperty({ example: false, required: false })
-  @IsOptional()
-  @IsBoolean()
-  isClosedToday?: boolean;
+  @ApiProperty({ type: [TimeSlotDto], required: false })
+@IsOptional()
+@ValidateNested({ each: true })
+@Type(() => TimeSlotDto)
+timeSlots?: TimeSlotDto[];
 }

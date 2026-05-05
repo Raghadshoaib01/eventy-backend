@@ -22,20 +22,21 @@ enum DayOfWeek {
   SUNDAY = 'SUNDAY',
 }
 
+// ✅ مطابق Prisma 100%
 export class TimeSlotDto {
   @ApiProperty({ example: '09:00' })
   @IsString()
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
     message: 'Invalid time format. Use HH:mm',
   })
-  startTime: string;
+  fromTime: string; // ✅ FIX
 
   @ApiProperty({ example: '12:00' })
   @IsString()
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
     message: 'Invalid time format. Use HH:mm',
   })
-  endTime: string;
+  toTime: string; // ✅ FIX
 
   @ApiProperty({ example: 2 })
   @Type(() => Number)
@@ -43,6 +44,7 @@ export class TimeSlotDto {
   capacity: number;
 }
 
+// ⚠️ ملاحظة: capacity غير موجود في Prisma Availability → نحذفه
 export class ServiceAvailabilityDto {
   @ApiProperty({ example: 'MONDAY', enum: DayOfWeek })
   @IsEnum(DayOfWeek)
@@ -62,11 +64,6 @@ export class ServiceAvailabilityDto {
   })
   workToTime: string;
 
-  @ApiProperty({ example: 5 })
-  @Type(() => Number)
-  @IsNumber()
-  capacity: number;
-
   @ApiProperty({ example: false })
   @IsBoolean()
   @IsOptional()
@@ -80,7 +77,9 @@ export class ServiceAvailabilityDto {
   timeSlots?: TimeSlotDto[];
 }
 
-// For FOOD, PHOTOGRAPHY, FAVORS, DECORATION (NO price here)
+// =======================
+// WITHOUT price
+// =======================
 export class CompleteServiceDetailsDto {
   @ApiProperty({ example: 50, required: false })
   @Type(() => Number)
@@ -95,8 +94,7 @@ export class CompleteServiceDetailsDto {
   maxCapacity?: number;
 
   @ApiProperty({
-    type:ServiceAvailabilityDto,
-    description: 'Availability schedule per day',
+    type: [ServiceAvailabilityDto], // ✅ FIX (كان غلط)
   })
   @IsArray()
   @ValidateNested({ each: true })
@@ -105,7 +103,9 @@ export class CompleteServiceDetailsDto {
   availability: ServiceAvailabilityDto[];
 }
 
-// For HALL, SOUND (WITH price)
+// =======================
+// WITH price
+// =======================
 export class CompleteHallSoundDetailsDto {
   @ApiProperty({ example: 50 })
   @Type(() => Number)
@@ -127,7 +127,6 @@ export class CompleteHallSoundDetailsDto {
 
   @ApiProperty({
     type: [ServiceAvailabilityDto],
-    description: 'Availability schedule per day',
   })
   @IsArray()
   @ValidateNested({ each: true })

@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
@@ -11,60 +12,54 @@ import { UpdateServiceDto } from './dto/update-service.dto';
 export class ServicesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  /**
-   * ➕ API #9: POST Create New Service
-   */
+  // ========================
+  // ➕ Create Service
+  // ========================
   async createService(userId: string, dto: CreateServiceDto) {
-    // 1. جلب Provider
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        provider: true,
-      },
+      include: { provider: true },
     });
 
     if (!user || !user.provider) {
       throw new NotFoundException('Provider not found');
     }
 
-    // 2. إنشاء Service
     const service = await this.prisma.service.create({
       data: {
         providerId: user.provider.id,
-        serviceType: dto.serviceType,
-        eventTypes: dto.eventTypes,
+        serviceTypeId: dto.serviceTypeId,
         description: dto.description,
 
-        // Availability
-        availableFrom: dto.availableFrom,
-        availableTo: dto.availableTo,
-        dailyCapacity: dto.dailyCapacity,
-        capacityUnit: dto.capacityUnit,
-
-        // Optional
-        useTimeSlots: dto.useTimeSlots || false,
         minCapacity: dto.minCapacity,
         maxCapacity: dto.maxCapacity,
         price: dto.price,
 
-        // Status
-        approvalStatus: 'PENDING',
+        eventTypes: {
+          create: dto.eventTypes.map((type) => ({
+            eventType: type,
+          })),
+        },
 
-        // Time Slots (إن وُجدت)
-        timeSlots: dto.timeSlots
-          ? {
-              createMany: {
-                data: dto.timeSlots.map((slot) => ({
-                  startTime: slot.startTime,
-                  endTime: slot.endTime,
-                  capacity: slot.capacity,
-                })),
-              },
-            }
-          : undefined,
+        availability: {
+          create: {
+            workFromTime: dto.workFromTime,
+            workToTime: dto.workToTime,
+            hasSlots: dto.hasSlots ?? false,
+
+            timeSlots: dto.timeSlots
+              ? {
+                  create: dto.timeSlots,
+                }
+              : undefined,
+          },
+        },
       },
       include: {
-        timeSlots: true,
+        eventTypes: true,
+        availability: {
+          include: { timeSlots: true },
+        },
         subServices: true,
       },
     });
@@ -75,15 +70,13 @@ export class ServicesService {
     };
   }
 
-  /**
-   * 📋 API #10: GET All My Services
-   */
+  // ========================
+  // 📋 Get My Services
+  // ========================
   async getMyServices(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        provider: true,
-      },
+      include: { provider: true },
     });
 
     if (!user || !user.provider) {
@@ -94,11 +87,12 @@ export class ServicesService {
       where: { providerId: user.provider.id },
       include: {
         subServices: true,
-        timeSlots: true,
+        eventTypes: true,
+        availability: {
+          include: { timeSlots: true },
+        },
         _count: {
-          select: {
-            bookings: true,
-          },
+          select: { bookings: true },
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -106,40 +100,13 @@ export class ServicesService {
 
     return {
       message: 'Services retrieved successfully',
-      data: services.map((service) => ({
-        id: service.id,
-        serviceType: service.serviceType,
-        eventTypes: service.eventTypes,
-        description: service.description,
-
-        availableFrom: service.availableFrom,
-        availableTo: service.availableTo,
-        dailyCapacity: service.dailyCapacity,
-        capacityUnit: service.capacityUnit,
-
-        useTimeSlots: service.useTimeSlots,
-        timeSlots: service.timeSlots,
-
-        minCapacity: service.minCapacity,
-        maxCapacity: service.maxCapacity,
-        price: service.price,
-
-        isActive: service.isActive,
-        isClosedToday: service.isClosedToday,
-        approvalStatus: service.approvalStatus,
-
-        subServicesCount: service.subServices.length,
-        bookingsCount: service._count.bookings,
-
-        createdAt: service.createdAt,
-        updatedAt: service.updatedAt,
-      })),
+      data: services,
     };
   }
 
-  /**
-   * 📄 Get Single Service by ID
-   */
+  // ========================
+  // 📄 Get Service By ID
+  // ========================
   async getServiceById(userId: string, serviceId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -154,7 +121,10 @@ export class ServicesService {
       where: { id: serviceId },
       include: {
         subServices: true,
-        timeSlots: true,
+        eventTypes: true,
+        availability: {
+          include: { timeSlots: true },
+        },
       },
     });
 
@@ -162,7 +132,6 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
-    // تحقق من أن الخدمة تعود للـ Provider
     if (service.providerId !== user.provider.id) {
       throw new ForbiddenException('Access denied');
     }
@@ -173,9 +142,9 @@ export class ServicesService {
     };
   }
 
-  /**
-   * ✏️ Update Service
-   */
+  // ========================
+  // ✏️ Update Service
+  // ========================
   async updateService(
     userId: string,
     serviceId: string,
@@ -192,6 +161,7 @@ export class ServicesService {
 
     const service = await this.prisma.service.findUnique({
       where: { id: serviceId },
+      include: { availability: true },
     });
 
     if (!service) {
@@ -202,27 +172,92 @@ export class ServicesService {
       throw new ForbiddenException('Access denied');
     }
 
+    // ✅ Validation
+    if (
+      dto.minCapacity !== undefined &&
+      dto.maxCapacity !== undefined &&
+      dto.minCapacity > dto.maxCapacity
+    ) {
+      throw new BadRequestException(
+        'minCapacity cannot be greater than maxCapacity',
+      );
+    }
+
+    if (
+      dto.workFromTime !== undefined &&
+      dto.workToTime !== undefined &&
+      dto.workFromTime >= dto.workToTime
+    ) {
+      throw new BadRequestException(
+        'workFromTime must be earlier than workToTime',
+      );
+    }
+
     const updated = await this.prisma.service.update({
       where: { id: serviceId },
       data: {
-        eventTypes: dto.eventTypes,
         description: dto.description,
-        availableFrom: dto.availableFrom,
-        availableTo: dto.availableTo,
-        dailyCapacity: dto.dailyCapacity,
-        capacityUnit: dto.capacityUnit,
-        useTimeSlots: dto.useTimeSlots,
         minCapacity: dto.minCapacity,
         maxCapacity: dto.maxCapacity,
         price: dto.price,
-        isActive: dto.isActive,
-        isClosedToday: dto.isClosedToday,
+
+        // ✅ EventTypes
+        eventTypes: dto.eventTypes
+          ? {
+              deleteMany: {},
+              create: dto.eventTypes.map((type) => ({
+                eventType: type,
+              })),
+            }
+          : undefined,
+
+        // ✅ FIX: updateMany مع where + partial update
+        availability:
+          dto.workFromTime !== undefined ||
+          dto.workToTime !== undefined ||
+          dto.hasSlots !== undefined
+            ? {
+                updateMany: {
+                  where: { serviceId: serviceId }, // ✅ حل الخطأ
+                  data: {
+                    ...(dto.workFromTime !== undefined && {
+                      workFromTime: dto.workFromTime,
+                    }),
+                    ...(dto.workToTime !== undefined && {
+                      workToTime: dto.workToTime,
+                    }),
+                    ...(dto.hasSlots !== undefined && {
+                      hasSlots: dto.hasSlots,
+                    }),
+                  },
+                },
+              }
+            : undefined,
       },
       include: {
+        availability: {
+          include: { timeSlots: true },
+        },
+        eventTypes: true,
         subServices: true,
-        timeSlots: true,
       },
     });
+
+    // ✅ FIX: timeSlots بدون أخطاء
+    if (dto.timeSlots && service.availability.length > 0) {
+      const availabilityId = service.availability[0].id;
+
+      await this.prisma.timeSlot.deleteMany({
+        where: { availabilityId },
+      });
+
+      await this.prisma.timeSlot.createMany({
+        data: dto.timeSlots.map((slot) => ({
+          ...slot,
+          availabilityId,
+        })),
+      });
+    }
 
     return {
       message: 'Service updated successfully',
@@ -230,9 +265,9 @@ export class ServicesService {
     };
   }
 
-  /**
-   * 🗑️ Delete Service
-   */
+  // ========================
+  // 🗑️ Delete Service
+  // ========================
   async deleteService(userId: string, serviceId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },

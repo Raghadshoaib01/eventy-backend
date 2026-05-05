@@ -105,8 +105,8 @@ export class ServiceDetailsService {
         timeSlots: avail.timeSlots?.length
           ? {
               create: avail.timeSlots.map((slot) => ({
-                fromTime: slot.startTime,
-                toTime: slot.endTime,
+                fromTime: slot.fromTime,
+                toTime: slot.toTime,
                 capacity: slot.capacity,
               })),
             }
@@ -225,8 +225,8 @@ export class ServiceDetailsService {
         timeSlots: avail.timeSlots?.length
           ? {
               create: avail.timeSlots.map((slot) => ({
-                fromTime: slot.startTime,
-                toTime: slot.endTime,
+                fromTime: slot.fromTime,
+                toTime: slot.toTime,
                 capacity: slot.capacity,
               })),
             }

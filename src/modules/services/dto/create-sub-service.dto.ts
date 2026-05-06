@@ -9,10 +9,10 @@ import {
 } from 'class-validator';
 
 enum UnitType {
-  BOOKING = 'BOOKING',
+  //BOOKING = 'BOOKING',
   ITEM = 'ITEM',
   SESSION = 'SESSION',
-  PERSON = 'PERSON',
+  //PERSON = 'PERSON',
 }
 
 export class CreateSubServiceDto {
@@ -46,4 +46,13 @@ export class CreateSubServiceDto {
   @IsNumber()
   @IsOptional()
   dailyCapacity?: number;
+
+  @ApiProperty({
+  type: 'array',
+  items: { type: 'string', format: 'binary' },
+  description: 'Media files (images/videos)',
+  required: false,
+})
+@IsOptional()
+media?: any[];
 }

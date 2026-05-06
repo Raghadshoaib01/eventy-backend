@@ -60,7 +60,8 @@ import { ProviderProfileService } from './modules/providers/provider profail ser
   providers: [
     AppService,
     ProviderBookingsService,
-    ProviderProfileService, // ServiceService, ProviderService
+    ProviderProfileService,
+    
   ],
 })
 export class AppModule {}

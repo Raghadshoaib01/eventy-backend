@@ -21,13 +21,28 @@ export class SubServiceService {
     dto: CreateSubServiceDto,
     media: Express.Multer.File[],
   ) {
+
+        const provider = await this.prisma.serviceProvider.findFirst({
+      where: {
+        userId: providerId,
+      },
+    });
+    
+    if (!provider) {
+      throw new NotFoundException('Provider not found for this user');
+    }
     // 1. التحقق من ملكية الخدمة
     const service = await this.prisma.service.findFirst({
       where: {
         id: serviceId,
-        providerId: providerId,
+        providerId:provider.id,
       },
+       include: {
+    provider: true,
+    serviceType: true,
+  },
     });
+
 
     if (!service) {
       throw new NotFoundException('Service not found or you do not own this service');
@@ -35,9 +50,9 @@ export class SubServiceService {
 
     // 2. التحقق من أن نوع الخدمة يسمح بـ SubServices
     const allowedTypes = ['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION'];
-    if (!allowedTypes.includes(service.serviceTypeId)) {
+    if (!allowedTypes.includes(service.serviceType.name)) {
       throw new BadRequestException(
-        `Sub-services are not allowed for ${service.serviceTypeId}. Only FOOD, PHOTOGRAPHY, FAVORS, DECORATION support sub-services.`
+        `Sub-services are not allowed for ${service.serviceType.name}. Only FOOD, PHOTOGRAPHY, FAVORS, DECORATION support sub-services.`
       );
     }
 

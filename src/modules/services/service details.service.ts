@@ -27,14 +27,25 @@ export class ServiceDetailsService {
     dto: CompleteServiceDetailsDto,
     media?: Express.Multer.File[],
   ) {
+    const provider = await this.prisma.serviceProvider.findFirst({
+  where: {
+    userId: providerId,
+  },
+});
+
+if (!provider) {
+  throw new NotFoundException('Provider not found for this user');
+}
+console.log(provider.id,provider.businessName)
     // 1. التحقق من ملكية الخدمة وحالتها
     const service = await this.prisma.service.findFirst({
       where: {
         id: serviceId,
-        providerId: providerId,
+        providerId: provider.id,
       },
       include: {
         provider: true,
+         serviceType: true,
       },
     });
 
@@ -53,7 +64,7 @@ export class ServiceDetailsService {
 
     // 3. التحقق من نوع الخدمة
     const allowedTypes = ['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION'];
-    if (!allowedTypes.includes(service.serviceTypeId)) {
+    if (!allowedTypes.includes(service.serviceType.name)) {
       throw new BadRequestException(
         `This endpoint is only for ${allowedTypes.join(', ')}. Use completeHallSoundDetails for HALL/SOUND.`,
       );
@@ -136,21 +147,31 @@ export class ServiceDetailsService {
    * هذه الخدمات لا تحتاج SubServices
    */
   async completeHallSoundDetails(
-    providerId: string,
+    userId: string,
     serviceId: string,
     dto: CompleteHallSoundDetailsDto,
     media: Express.Multer.File[],
   ) {
+   const provider = await this.prisma.serviceProvider.findFirst({
+  where: {
+    userId: userId,
+  },
+});
+
+if (!provider) {
+  throw new NotFoundException('Provider not found for this user');
+}
     // 1. التحقق من ملكية الخدمة
-    const service = await this.prisma.service.findFirst({
-      where: {
-        id: serviceId,
-        providerId: providerId,
-      },
-      include: {
-        provider: true,
-      },
-    });
+const service = await this.prisma.service.findFirst({
+  where: {
+    id: serviceId,
+    providerId: provider.id,
+  },
+  include: {
+    provider: true,
+    serviceType: true,
+  },
+});
 
     if (!service) {
       throw new NotFoundException(
@@ -166,12 +187,11 @@ export class ServiceDetailsService {
     }
 
     // 3. التحقق من نوع الخدمة
-    if (!['HALL', 'SOUND'].includes(service.serviceTypeId)) {
-      throw new BadRequestException(
-        'This endpoint is only for HALL or SOUND services. Use completeServiceDetails for others.',
-      );
-    }
-
+if (!['HALL', 'SOUND'].includes(service.serviceType.name)) {
+  throw new BadRequestException(
+    'This endpoint is only for HALL or SOUND services. Use completeServiceDetails for others.',
+  );
+}
     // 4. التحقق من وجود ملفات (مطلوبة)
     if (!media || media.length === 0) {
       throw new BadRequestException(

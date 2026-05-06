@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Type,plainToInstance } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -11,6 +11,7 @@ import {
   Matches,
   ValidateNested,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 
 enum DayOfWeek {
   MONDAY = 'MONDAY',
@@ -94,13 +95,43 @@ export class CompleteServiceDetailsDto {
   maxCapacity?: number;
 
   @ApiProperty({
-    type: [ServiceAvailabilityDto], // ✅ FIX (كان غلط)
+    type: [ServiceAvailabilityDto], 
+  })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceAvailabilityDto)
+  @IsNotEmpty()
+  //availability: ServiceAvailabilityDto[];
+
+@ApiProperty({
+    type: [ServiceAvailabilityDto],
+  })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      const parsed = JSON.parse(value);
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('availability must be an array');
+      }
+
+      return plainToInstance(ServiceAvailabilityDto, parsed);
+    }
+    return value;
   })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ServiceAvailabilityDto)
   @IsNotEmpty()
   availability: ServiceAvailabilityDto[];
+  
+@ApiProperty({
+  type: 'array',
+  items: { type: 'string', format: 'binary' },
+  description: 'Media files (images/videos)',
+  required: false,
+})
+@IsOptional()
+media?: any[];
 }
 
 // =======================
@@ -128,9 +159,30 @@ export class CompleteHallSoundDetailsDto {
   @ApiProperty({
     type: [ServiceAvailabilityDto],
   })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') {
+      const parsed = JSON.parse(value);
+
+      if (!Array.isArray(parsed)) {
+        throw new Error('availability must be an array');
+      }
+
+      return plainToInstance(ServiceAvailabilityDto, parsed);
+    }
+    return value;
+  })
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => ServiceAvailabilityDto)
   @IsNotEmpty()
   availability: ServiceAvailabilityDto[];
-}
+
+  @ApiProperty({
+  type: 'array',
+  items: { type: 'string', format: 'binary' },
+  description: 'Media files (images/videos)',
+  required: false,
+})
+@IsOptional()
+media?: any[];
+ }

@@ -208,7 +208,7 @@ model ServiceDetailFile {
   serviceId String
   fileUrl   String
   fileType  FileType
-
+  publicId  String 
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   uploadedAt DateTime @default(now())
@@ -276,6 +276,8 @@ model ServiceAvailability {
 
   workFromTime String
   workToTime   String
+ capacity Int    @default(1)
+
   hasSlots     Boolean @default(false)
 
   timeSlots   TimeSlot[]

@@ -24,7 +24,7 @@ import { CreateServiceDto } from '../dto/create-service.dto';
 import { UpdateServiceDto } from '../dto/update-service.dto';
 
 @ApiTags('Services')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Controller('services')
 export class ServicesController {
@@ -37,18 +37,18 @@ export class ServicesController {
   @ApiOperation({ summary: 'Create new service (Provider only)' })
   @ApiResponse({ status: 201, description: 'Service created successfully' })
   createService(@Request() req, @Body() dto: CreateServiceDto) {
-    return this.servicesService.createService(req.user.id, dto);
+    return this.servicesService.createService(req.user.sub,dto)
   }
 
-  // ========================
-  // 📋 Get My Services
-  // ========================
-  @Get('my')
-  @ApiOperation({ summary: 'Get all my services (Provider only)' })
-  @ApiResponse({ status: 200 })
-  getMyServices(@Request() req) {
-    return this.servicesService.getMyServices(req.user.id);
-  }
+  // // ========================
+  // // 📋 Get My Services
+  // // ========================
+  // @Get('my')
+  // @ApiOperation({ summary: 'Get all my services (Provider only)' })
+  // @ApiResponse({ status: 200 })
+  // getMyServices(@Request() req) {
+  //   return this.servicesService.getMyServices(req.user.sub);
+  // }
 
   // ========================
   // 📄 Get Service By ID
@@ -58,7 +58,7 @@ export class ServicesController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   getServiceById(@Request() req, @Param('id') serviceId: string) {
-    return this.servicesService.getServiceById(req.user.id, serviceId);
+    return this.servicesService.getServiceById(req.user.sub, serviceId);
   }
 
   // ========================
@@ -74,7 +74,7 @@ export class ServicesController {
     @Body() dto: UpdateServiceDto,
   ) {
     return this.servicesService.updateService(
-      req.user.id,
+      req.user.sub,
       serviceId,
       dto,
     );
@@ -88,6 +88,6 @@ export class ServicesController {
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
   deleteService(@Request() req, @Param('id') serviceId: string) {
-    return this.servicesService.deleteService(req.user.id, serviceId);
+    return this.servicesService.deleteService(req.user.sub, serviceId);
   }
 }

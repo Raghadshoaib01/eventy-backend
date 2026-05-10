@@ -1,33 +1,49 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import * as streamifier from 'streamifier';
+import { FileType as PrismaFileType } from '@prisma/client';
 
 export type UploadFolder =
   | 'eventy/profiles'
   | 'eventy/services'
+  | 'eventy/sub-services'
   | 'eventy/halls'
   | 'eventy/documents'
   | 'eventy/videos';
 
-type FileType = 'image' | 'video' | 'document';
+/**
+ * 🔴 النوع المحلي فقط للرفع
+ */
+type UploadFileType = 'image' | 'video' | 'document';
 
+/**
+ * 🔵 نوع Cloudinary الصحيح
+ */
+type CloudinaryResourceType = 'image' | 'video' | 'raw';
+
+/**
+ * DTO Options
+ */
 interface UploadOptions {
   folder: UploadFolder;
-  fileType?: FileType;
+  fileType?: UploadFileType;
 }
 
+/**
+ * Output موحّد
+ */
 interface UploadResult {
   url: string;
   publicId: string;
-  fileType: string;
+  fileType: PrismaFileType; // 👈 مهم: Prisma enum
   size: number;
   format: string;
 }
 
 @Injectable()
 export class CloudinaryService {
-  // ── تكوين الملفات المسموحة ──────────────────────────────
-  private readonly allowedTypes: Record<FileType, string[]> = {
+  // ── allowed MIME types ─────────────────────────────
+  private readonly allowedTypes: Record<UploadFileType, string[]> = {
     image: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'],
     video: ['video/mp4', 'video/quicktime', 'video/avi', 'video/mkv'],
     document: [
@@ -39,20 +55,21 @@ export class CloudinaryService {
     ],
   };
 
-  private readonly maxSizes: Record<FileType, number> = {
-    image: 5 * 1024 * 1024, // 5MB
-    video: 100 * 1024 * 1024, // 100MB
-    document: 10 * 1024 * 1024, // 10MB
+  private readonly maxSizes: Record<UploadFileType, number> = {
+    image: 5 * 1024 * 1024,
+    video: 100 * 1024 * 1024,
+    document: 10 * 1024 * 1024,
   };
 
-  // ── رفع ملف ─────────────────────────────────────────────
+  // ── MAIN UPLOAD ─────────────────────────────────────
   async upload(
     file: Express.Multer.File,
     options: UploadOptions,
   ): Promise<UploadResult> {
     if (!file) throw new BadRequestException('No file provided');
 
-    const fileType = options.fileType ?? this.detectFileType(file.mimetype);
+    const fileType: UploadFileType =
+      options.fileType ?? this.detectFileType(file.mimetype);
 
     this.validateFile(file, fileType);
 
@@ -63,16 +80,20 @@ export class CloudinaryService {
         cloudinaryOptions,
         (error, result: UploadApiResponse) => {
           if (error) {
-            reject(new BadRequestException(`Upload failed: ${error.message}`));
-          } else {
-            resolve({
-              url: result.secure_url,
-              publicId: result.public_id,
-              fileType: result.resource_type,
-              size: result.bytes,
-              format: result.format,
-            });
+            reject(new BadRequestException(error.message));
+            return;
           }
+
+          resolve({
+            url: result.secure_url,
+            publicId: result.public_id,
+
+            // 🔴 أهم إصلاح: تحويل Cloudinary → Prisma enum
+            fileType: this.mapToPrismaFileType(result.resource_type),
+
+            size: result.bytes,
+            format: result.format,
+          });
         },
       );
 
@@ -80,29 +101,27 @@ export class CloudinaryService {
     });
   }
 
-  // ── حذف ملف ─────────────────────────────────────────────
+  // ── DELETE ──────────────────────────────────────────
   async delete(publicId: string): Promise<void> {
     try {
       await cloudinary.uploader.destroy(publicId);
-    } catch {
+    } catch (e) {
       console.error(`Failed to delete: ${publicId}`);
     }
   }
 
-  // ── استخراج publicId من URL ──────────────────────────────
+  // ── PUBLIC ID ───────────────────────────────────────
   extractPublicId(url: string): string {
-    // https://res.cloudinary.com/cloud/image/upload/v123/eventy/profiles/abc.jpg
     const parts = url.split('/');
     const uploadIndex = parts.indexOf('upload');
-    // نأخذ كل شيء بعد upload/vXXX
     const relevant = parts.slice(uploadIndex + 2).join('/');
-    // نحذف الامتداد
     return relevant.replace(/\.[^/.]+$/, '');
   }
 
-  // ── Validation ───────────────────────────────────────────
-  private validateFile(file: Express.Multer.File, fileType: FileType): void {
+  // ── VALIDATION ──────────────────────────────────────
+  private validateFile(file: Express.Multer.File, fileType: UploadFileType) {
     const allowed = this.allowedTypes[fileType];
+
     if (!allowed.includes(file.mimetype)) {
       throw new BadRequestException(
         `Invalid file type. Allowed: ${allowed.join(', ')}`,
@@ -110,70 +129,73 @@ export class CloudinaryService {
     }
 
     const maxSize = this.maxSizes[fileType];
+
     if (file.size > maxSize) {
-      const maxMB = maxSize / (1024 * 1024);
-      throw new BadRequestException(`File too large. Max size: ${maxMB}MB`);
+      throw new BadRequestException(
+        `File too large. Max size: ${maxSize / (1024 * 1024)}MB`,
+      );
     }
   }
 
-  // ── تحديد نوع الملف من mimetype ─────────────────────────
-  private detectFileType(mimetype: string): FileType {
+  // ── DETECT TYPE ─────────────────────────────────────
+  private detectFileType(mimetype: string): UploadFileType {
     if (mimetype.startsWith('image/')) return 'image';
     if (mimetype.startsWith('video/')) return 'video';
     return 'document';
   }
 
-  // ── خيارات الرفع حسب النوع ───────────────────────────────
-  private buildUploadOptions(folder: UploadFolder, fileType: FileType) {
-    const base = { folder, resource_type: 'auto' as const };
+  // ── CLOUDINARY OPTIONS ──────────────────────────────
+  private buildUploadOptions(
+    folder: UploadFolder,
+    fileType: UploadFileType,
+  ) {
+    const base = {
+      folder,
+      resource_type: this.mapToCloudinaryResourceType(fileType),
+    };
 
     if (fileType === 'image') {
       return {
         ...base,
-        transformation: [{ quality: 'auto', fetch_format: 'auto' }],
+        transformation: [
+          { quality: 'auto', fetch_format: 'auto' },
+        ],
       };
     }
 
     if (fileType === 'video') {
       return {
         ...base,
-        resource_type: 'video' as const,
         transformation: [{ quality: 'auto' }],
       };
     }
 
-    // document / pdf / excel
-    return {
-      ...base,
-      resource_type: 'raw' as const,
-    };
+    return base;
+  }
+
+  // ── MAP Cloudinary → Prisma ─────────────────────────
+  private mapToPrismaFileType(resource: string): PrismaFileType {
+    switch (resource) {
+      case 'image':
+        return PrismaFileType.IMAGE;
+      case 'video':
+        return PrismaFileType.VIDEO;
+      default:
+        return PrismaFileType.DOCUMENT;
+    }
+  }
+
+  // ── MAP local → Cloudinary ──────────────────────────
+  private mapToCloudinaryResourceType(
+    fileType: UploadFileType,
+  ): CloudinaryResourceType {
+    switch (fileType) {
+      case 'image':
+        return 'image';
+      case 'video':
+        return 'video';
+      case 'document':
+        return 'raw';
+    }
   }
 }
-/*
-// صورة بروفايل مستخدم
-await this.cloudinaryService.upload(file, {
-  folder: 'eventy/profiles',
-});
-
-// صور خدمة
-await this.cloudinaryService.upload(file, {
-  folder: 'eventy/services',
-});
-
-// صور قاعة
-await this.cloudinaryService.upload(file, {
-  folder: 'eventy/halls',
-});
-
-// وثيقة PDF أو Excel
-await this.cloudinaryService.upload(file, {
-  folder:   'eventy/documents',
-  fileType: 'document',
-});
-
-// فيديو
-await this.cloudinaryService.upload(file, {
-  folder:   'eventy/videos',
-  fileType: 'video',
-});
-*/

@@ -112,15 +112,15 @@ export class ProviderProfileController {
     return this.providerProfileService.getProviderServices(req.user.sub);
   }
 
-  // ========== 5. Get Single Service by ID ==========
-  @Get('services/:serviceId')
-  @ApiOperation({ summary: 'Get single service details' })
-  @ApiParam({ name: 'serviceId', description: 'Service ID' })
-  @ApiResponse({ status: 200, description: 'Service retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Service not found' })
-  async getServiceById(@Request() req, @Param('serviceId') serviceId: string) {
-    return this.providerProfileService.getServiceById(req.user.sub, serviceId);
-  }
+  // // ========== 5. Get Single Service by ID ==========
+  // @Get('services/:serviceId')
+  // @ApiOperation({ summary: 'Get single service details' })
+  // @ApiParam({ name: 'serviceId', description: 'Service ID' })
+  // @ApiResponse({ status: 200, description: 'Service retrieved successfully' })
+  // @ApiResponse({ status: 404, description: 'Service not found' })
+  // async getServiceById(@Request() req, @Param('serviceId') serviceId: string) {
+  //   return this.providerProfileService.getServiceById(req.user.sub, serviceId);
+  // }
 
   // ========== 6. Delete Service ==========
   @Delete('services/:serviceId')

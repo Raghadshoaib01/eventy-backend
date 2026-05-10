@@ -1,5 +1,6 @@
 // src/modules/services/dto/Complete service details.dto.ts
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty  ,ApiPropertyOptional
+} from '@nestjs/swagger';
 import { Type, Transform, plainToInstance } from 'class-transformer';
 import {
   IsArray,
@@ -30,14 +31,14 @@ export class TimeSlotDto {
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
     message: 'Invalid time format. Use HH:mm',
   })
-  startTime: string;
+  fromTime: string;
 
   @ApiProperty({ example: '12:00' })
   @IsString()
   @Matches(/^([01]\d|2[0-3]):([0-5]\d)$/, {
     message: 'Invalid time format. Use HH:mm',
   })
-  endTime: string;
+  toTime: string;
 
   @ApiProperty({ example: 2 })
   @Type(() => Number)
@@ -101,7 +102,7 @@ export class BankAccountDto {
 }
 
 // ✅ DTO for SubService creation with required media
-export class InitialSubServiceDto {
+export class SubServiceDto{
   @ApiProperty({ example: 'Full Event Package' })
   @IsString()
   @IsNotEmpty()
@@ -132,16 +133,6 @@ export class InitialSubServiceDto {
   @IsNumber()
   @IsOptional()
   dailyCapacity?: number;
-
-  // ✅ Media Index - يشير إلى أي ملف في مصفوفة media الرئيسية
-  @ApiProperty({
-    example: 0,
-    description: 'Index of media file in the main media array (starting from 0)',
-  })
-  @Type(() => Number)
-  @IsNumber()
-  @IsNotEmpty()
-  mediaIndex: number;
 }
 
 // For FOOD, PHOTOGRAPHY, FAVORS, DECORATION
@@ -192,56 +183,58 @@ export class CompleteServiceDetailsDto {
   @IsNotEmpty()
   bankAccount: BankAccountDto;
 
-  // SubServices (مطلوب على الأقل واحد)
   @ApiProperty({
-    type: [InitialSubServiceDto],
-    description: 'At least one sub-service is required. Each must reference a media file via mediaIndex.',
-    example: [
-      {
-        name: 'Package A',
-        description: 'Basic package',
-        pricePerUnit: 100,
-        unitType: 'ITEM',
-        dailyCapacity: 5,
-        mediaIndex: 0
-      },
-      {
-        name: 'Package B',
-        description: 'Premium package',
-        pricePerUnit: 200,
-        unitType: 'ITEM',
-        dailyCapacity: 3,
-        mediaIndex: 1
-      }
-    ]
+    type: SubServiceDto,
+    description: 'Single sub-service object',
   })
   @Transform(({ value }) => {
-    if (typeof value === 'string') {
-      const parsed = JSON.parse(value);
-      if (!Array.isArray(parsed)) {
-        throw new Error('subServices must be an array');
-      }
-      return plainToInstance(InitialSubServiceDto, parsed);
-    }
-    return value;
-  })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => InitialSubServiceDto)
-  @IsNotEmpty()
-  @ArrayMinSize(1, { message: 'At least one sub-service is required' })
-  subServices: InitialSubServiceDto[];
+  if (typeof value === 'string') {
+    return plainToInstance(SubServiceDto, JSON.parse(value));
+  }
+  return value;
+})
+@ValidateNested()
+@Type(() => SubServiceDto)
+subService: SubServiceDto;
 
-  // ✅ Media files - مطلوب على الأقل ملف واحد لكل SubService
-  @ApiProperty({
-    type: 'array',
-    items: { type: 'string', format: 'binary' },
-    description: 'Media files for sub-services (at least 1 file per sub-service required)',
-    required: true,
+// ✅ مهم جدًا: ملفات service
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    isArray: true,
+    description: 'Main service media (1 or more files)',
   })
-  @IsNotEmpty({ message: 'At least one media file is required' })
-  media?: any[];
-}
+  serviceMedia?: any[];
+
+  // ✅ مهم جدًا: ملفات sub service
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    isArray: true,
+    description: 'Sub service media files',
+  })
+  subServiceMedia?: any[];
+
+//     @ApiProperty({
+//     type: 'array',
+//     items: { type: 'string', format: 'binary' },
+//     description: 'Media files for hall/sound (at least 1 required)',
+//     required: true,
+//   })
+//   @IsNotEmpty({ message: 'At least one media file is required' })
+// serviceMedia
+//   ?: any[];
+
+//     @ApiProperty({
+//     type: 'array',
+//     items: { type: 'string', format: 'binary' },
+//     description: 'Media files for hall/sound (at least 1 required)',
+//     required: true,
+//   })
+//   @IsNotEmpty({ message: 'At least one media file is required' })
+//  subServiceMedia
+//   ?: any[];
+ }
 
 // For HALL, SOUND
 export class CompleteHallSoundDetailsDto {
@@ -296,13 +289,12 @@ export class CompleteHallSoundDetailsDto {
   @IsNotEmpty()
   bankAccount: BankAccountDto;
 
-  // ✅ Media files - مطلوب
-  @ApiProperty({
-    type: 'array',
-    items: { type: 'string', format: 'binary' },
-    description: 'Media files for hall/sound (at least 1 required)',
-    required: true,
+  @ApiPropertyOptional({
+    type: 'string',
+    format: 'binary',
+    isArray: true,
+    description: 'Main service media (1 or more files)',
   })
-  @IsNotEmpty({ message: 'At least one media file is required' })
-  media?: any[];
+  media
+  ?: any[];
 }

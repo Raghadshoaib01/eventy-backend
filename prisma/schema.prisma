@@ -240,9 +240,9 @@ model SubService {
   pricePerUnit  Float
   unitType      String  @default("unit")
   dailyCapacity Int     @default(1)
-  isAvailable   Boolean @default(true)
+  isAvailable   Boolean @default(false)
   isAutoCreated Boolean @default(false)
-
+  
   media        SubServiceMedia[]
   bookingItems BookingItem[]
 

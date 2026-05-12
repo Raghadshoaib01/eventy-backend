@@ -3,6 +3,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { CreateSubServiceDto } from './dto/create-sub-service.dto';
 import {FileType} from '@prisma/client';
+import { UpdateSubServiceDto } from './dto/update-sub-service.dto';
 
 @Injectable()
 export class SubServiceService {
@@ -11,11 +12,7 @@ export class SubServiceService {
     private readonly cloudinaryService: CloudinaryService,
   ) {}
 
-  /**
-   * إضافة SubService لخدمة موجودة
-   * يُستخدم فقط لـ FOOD, PHOTOGRAPHY, FAVORS, DECORATION
-   */
-// src/modules/services/sub-services.service.ts
+
 
 async createSubService(
   providerId: string,
@@ -216,6 +213,223 @@ async deleteSubService(providerId: string, subServiceId: string) {
   return {
     message: 'Sub-service deleted successfully',
     data: null,
+  };
+}
+
+async updateSubService(
+  userId: string,
+  serviceId: string,
+  subServiceId: string,
+  dto: UpdateSubServiceDto,
+  media: Express.Multer.File[],
+) {
+
+  // =====================================================
+  // 1. التحقق من ملكية الـ SubService
+  // =====================================================
+
+  const subService = await this.prisma.subService.findFirst({
+    where: {
+      id: subServiceId,
+      serviceId: serviceId,
+
+      service: {
+        provider: {
+          userId: userId,
+        },
+      },
+    },
+
+    include: {
+      media: true,
+      bookingItems: true,
+
+      service: {
+        include: {
+          provider: true,
+          serviceType: true,
+        },
+      },
+    },
+  });
+
+  if (!subService) {
+    throw new NotFoundException(
+      'Sub-service not found',
+    );
+  }
+
+  // =====================================================
+  // 2. التأكد أن الخدمة الرئيسية مفعلة
+  // =====================================================
+
+  if (
+    subService.service.approvalStatus !==
+    'ACTIVE'
+  ) {
+    throw new BadRequestException(
+      'Cannot update sub-service before service approval',
+    );
+  }
+
+  // =====================================================
+  // 3. منع تعديل السعر بعد وجود حجوزات
+  // =====================================================
+
+  if (
+    subService.bookingItems.length > 0 &&
+    dto.pricePerUnit !== undefined
+  ) {
+    throw new BadRequestException(
+      'Cannot change price after bookings exist',
+    );
+  }
+
+  // =====================================================
+  // 4. تحديث البيانات الأساسية
+  // =====================================================
+
+  await this.prisma.subService.update({
+    where: {
+      id: subServiceId,
+    },
+
+    data: {
+      ...(dto.name !== undefined && {
+        name: dto.name,
+      }),
+
+      ...(dto.description !== undefined && {
+        description: dto.description,
+      }),
+
+      ...(dto.pricePerUnit !== undefined && {
+        pricePerUnit: dto.pricePerUnit,
+      }),
+
+      ...(dto.unitType !== undefined && {
+        unitType: dto.unitType,
+      }),
+
+      ...(dto.dailyCapacity !== undefined && {
+        dailyCapacity: dto.dailyCapacity,
+      }),
+
+
+    },
+  });
+
+  // =====================================================
+  // 5. رفع ملفات جديدة
+  // =====================================================
+
+  if (media?.length) {
+
+    await Promise.all(
+      media.map(async (file) => {
+
+        // =========================================
+        // TODO:
+        // Cloudinary Upload
+        // =========================================
+
+        const uploadedFile = {
+          secure_url: 'uploaded-url',
+          public_id: 'public-id',
+        };
+
+        await this.prisma.subServiceMedia.create({
+          data: {
+            subServiceId: subService.id,
+
+            url: uploadedFile.secure_url,
+
+            publicId: uploadedFile.public_id,
+
+            type: file.mimetype.startsWith(
+              'video',
+            )
+              ? 'VIDEO'
+              : 'IMAGE',
+          },
+        });
+      }),
+    );
+  }
+
+  // =====================================================
+  // 6. جلب النسخة النهائية
+  // =====================================================
+
+  const finalSubService =
+    await this.prisma.subService.findUnique({
+      where: {
+        id: subServiceId,
+      },
+
+      include: {
+        media: true,
+
+        service: {
+          include: {
+            serviceType: true,
+          },
+        },
+      },
+    });
+
+  // =====================================================
+  // 7. Response
+  // =====================================================
+
+  return {
+    success: true,
+
+    message:
+      'Sub-service updated successfully',
+
+    data: finalSubService,
+  };
+}
+
+async removeMedia(
+  providerId: string,
+  subServiceId: string,
+  mediaId: string,
+) {
+
+  const media = await this.prisma.subServiceMedia.findFirst({
+    where: {
+      id: mediaId,
+      subServiceId,
+      subService: {
+        service: {
+          provider: {
+            userId: providerId,
+          },
+        },
+      },
+    },
+  });
+
+  if (!media) {
+    throw new NotFoundException(
+      'Media not found',
+    );
+  }
+
+  // حذف من cloudinary
+  // await cloudinary.uploader.destroy(media.publicId);
+
+  // حذف من قاعدة البيانات
+  await this.prisma.subServiceMedia.delete({ 
+    where: {
+      id: mediaId,
+    },
+  });
+
+  return {
+    message: 'Media removed successfully',
   };
 }
 

@@ -11,6 +11,8 @@ import {
   UploadedFiles,
   HttpCode,
   HttpStatus,
+  Patch,
+  NotFoundException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,6 +26,7 @@ import { FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { SubServiceService } from '../sub-services.service';
 import { CreateSubServiceDto } from '../dto/create-sub-service.dto';
+import { UpdateSubServiceDto } from '../dto/update-sub-service.dto';
 
 @ApiTags('Sub-Services')
 @Controller('services/:serviceId/sub-services')
@@ -78,4 +81,58 @@ export class SubServiceController {
     const providerId = req.user.sub;
     return this.subServiceService.deleteSubService(providerId, subServiceId);
   }
+  // ========== عرض SubService ==========
+  @Get(':subServiceId')
+@ApiOperation({ summary: 'Get single sub-service details' })
+@ApiParam({ name: 'serviceId', description: 'Service ID' })
+@ApiParam({ name: 'subServiceId', description: 'Sub-service ID' })
+@ApiResponse({ status: 200, description: 'Sub-service retrieved successfully' })
+@ApiResponse({ status: 404, description: 'Sub-service not found' })
+async getSubServiceById(
+  @Request() req,
+  @Param('subServiceId') subServiceId: string,
+) {
+  const providerId = req.user.sub;
+  return this.subServiceService.getSubServiceById(providerId, subServiceId);
+}
+
+
+
+// ========== تحديث SubService ==========
+@Patch(':serviceId/:subServiceId')
+@UseInterceptors(FilesInterceptor('media', 10))
+async updateSubService(
+  @Request() req,
+  @Param('serviceId') serviceId: string,
+  @Param('subServiceId') subServiceId: string,
+  @Body() dto: UpdateSubServiceDto,
+  @UploadedFiles() media: Express.Multer.File[],
+) {
+  const providerId = req.user.sub;
+
+  return this.subServiceService.updateSubService(
+    providerId,
+    serviceId,
+    subServiceId,
+    dto,
+    media,
+  );
+}
+
+@Delete(':subServiceId/media/:mediaId')
+@ApiOperation({
+  summary: 'Remove media from sub-service',
+})
+async removeMedia(
+  @Request() req,
+  @Param('subServiceId') subServiceId: string,
+  @Param('mediaId') mediaId: string,
+) {
+
+  return this.subServiceService.removeMedia(
+    req.user.sub,
+    subServiceId,
+    mediaId,
+  );
+}
 }

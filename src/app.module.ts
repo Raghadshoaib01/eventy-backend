@@ -22,11 +22,14 @@ import { ProviderProfileController } from './modules/providers/provider profail.
 // import { ServiceService } from './modules/services/service details.service';
 import { ProviderProfileService } from './modules/providers/provider profail services.service';
 // import { ProviderController } from './modules/providers/provider profail.controller';
-// import { ProviderController } from './modules/providers/provider profail.controller';
+import { AdminModule } from './modules/admin/admin.module';
+import { AdminApprovalController } from './modules/admin/AdminApprovalController';
+import { AdminApprovalService } from './modules/admin/admin-approval-service.service';
+import { ProviderAuthController } from './modules/providers/provider-auth.controller';
+
 
 @Module({
   imports: [
-    // 1. ConfigModule أول شيء — يحمّل .env ويجعله متاحاً في كل المشروع
     ConfigModule.forRoot({ isGlobal: true }),
 
     // 2. DatabaseModule يوفر PrismaService لكل المشروع (@Global)
@@ -51,16 +54,21 @@ import { ProviderProfileService } from './modules/providers/provider profail ser
     ReportsModule,
     NotificationsModule,
     BookingsModule,
+    AdminModule,
   ],
   controllers: [
     AppController,
     ProviderBookingsController,
-    ProviderProfileController, //ProviderController
+    ProviderProfileController,
+    AdminApprovalController,
+   //ProviderController
   ],
   providers: [
     AppService,
     ProviderBookingsService,
     ProviderProfileService,
+    AdminApprovalService
+    ,
     
   ],
 })

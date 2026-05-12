@@ -1,12 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
+
 } from 'class-validator';
+
+import {
+  ApiPropertyOptional,
+} from '@nestjs/swagger';
 
 enum UnitType {
   //BOOKING = 'BOOKING',
@@ -55,4 +61,13 @@ export class CreateSubServiceDto {
 })
 @IsOptional()
 media?: any[];
+
+
+// @ApiPropertyOptional({
+//   example: true,
+// })
+// @IsOptional()
+// @IsBoolean()
+// isAvailable?: boolean;
+
 }

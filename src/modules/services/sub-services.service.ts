@@ -392,46 +392,97 @@ async updateSubService(
   };
 }
 
-async removeMedia(
+// تحديث ميديا الخدمة الفرعية (إضافة أو حذف) مع ضمان وجود ملف واحد على الأقل
+async updateSubServiceMedia(
   providerId: string,
   subServiceId: string,
-  mediaId: string,
+  deleteMediaIds: string[],   // معرفات الملفات المراد حذفها
+  newMedia: Express.Multer.File[],
 ) {
-
-  const media = await this.prisma.subServiceMedia.findFirst({
+  // 1. التحقق من الملكية
+  const subService = await this.prisma.subService.findFirst({
     where: {
-      id: mediaId,
-      subServiceId,
-      subService: {
-        service: {
-          provider: {
-            userId: providerId,
-          },
-        },
+      id: subServiceId,
+      service: {
+        provider: { userId: providerId },
       },
     },
+    include: { media: true },
   });
 
-  if (!media) {
-    throw new NotFoundException(
-      'Media not found',
+  if (!subService) {
+    throw new NotFoundException('Sub-service not found or you do not own it');
+  }
+
+  const currentCount = subService.media.length;
+  const deleteCount = deleteMediaIds?.length ?? 0;
+  const addCount = newMedia?.length ?? 0;
+
+  // 2. ضمان بقاء ملف واحد على الأقل
+  if (currentCount - deleteCount + addCount < 1) {
+    throw new BadRequestException(
+      'Sub-service must have at least one media file. Add new media before deleting all existing ones.',
     );
   }
 
-  // حذف من cloudinary
-  // await cloudinary.uploader.destroy(media.publicId);
+  // 3. التحقق أن الملفات المراد حذفها تنتمي لهذه الخدمة الفرعية
+  if (deleteMediaIds?.length) {
+    const toDelete = subService.media.filter((m) =>
+      deleteMediaIds.includes(m.id),
+    );
 
-  // حذف من قاعدة البيانات
-  await this.prisma.subServiceMedia.delete({ 
-    where: {
-      id: mediaId,
-    },
+    if (toDelete.length !== deleteMediaIds.length) {
+      throw new BadRequestException(
+        'One or more media IDs do not belong to this sub-service',
+      );
+    }
+
+    // حذف من Cloudinary ثم من DB
+    await Promise.all(
+      toDelete.map(async (m) => {
+        if (m.publicId) {
+          await this.cloudinaryService.delete(m.publicId);
+        }
+        await this.prisma.subServiceMedia.delete({ where: { id: m.id } });
+      }),
+    );
+  }
+
+  // 4. رفع الملفات الجديدة
+  if (newMedia?.length) {
+    const uploadedMedia = await Promise.all(
+      newMedia.map(async (file) => {
+        const uploaded = await this.cloudinaryService.upload(file, {
+          folder: 'eventy/sub-services',
+        });
+        return {
+          url: uploaded.url,
+          type: file.mimetype.startsWith('video') ? FileType.VIDEO : FileType.IMAGE,
+          publicId: uploaded.publicId,
+        };
+      }),
+    );
+
+    await this.prisma.subServiceMedia.createMany({
+      data: uploadedMedia.map((m) => ({
+        subServiceId,
+        url: m.url,
+        type: m.type,
+        publicId: m.publicId,
+      })),
+    });
+  }
+
+  // 5. إرجاع النسخة المحدّثة
+  const updated = await this.prisma.subService.findUnique({
+    where: { id: subServiceId },
+    include: { media: true },
   });
 
   return {
-    message: 'Media removed successfully',
+    message: 'Sub-service media updated successfully',
+    data: updated,
   };
 }
-
 
 }

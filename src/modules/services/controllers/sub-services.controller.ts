@@ -118,21 +118,30 @@ async updateSubService(
     media,
   );
 }
-
-@Delete(':subServiceId/media/:mediaId')
-@ApiOperation({
-  summary: 'Remove media from sub-service',
-})
-async removeMedia(
+@Patch(':subServiceId/media')
+@UseInterceptors(FilesInterceptor('newMedia', 10))
+@ApiConsumes('multipart/form-data')
+@ApiOperation({ summary: 'Add or remove media from sub-service (min 1 file)' })
+@ApiParam({ name: 'serviceId' })
+@ApiParam({ name: 'subServiceId' })
+async updateSubServiceMedia(
   @Request() req,
   @Param('subServiceId') subServiceId: string,
-  @Param('mediaId') mediaId: string,
+  @Body('deleteMediaIds') deleteMediaIds: string | string[],
+  @UploadedFiles() newMedia: Express.Multer.File[],
 ) {
+  // deleteMediaIds قد يأتي كـ string واحد أو array
+  const toDelete = deleteMediaIds
+    ? Array.isArray(deleteMediaIds)
+      ? deleteMediaIds
+      : [deleteMediaIds]
+    : [];
 
-  return this.subServiceService.removeMedia(
+  return this.subServiceService.updateSubServiceMedia(
     req.user.sub,
     subServiceId,
-    mediaId,
+    toDelete,
+    newMedia,
   );
 }
 }

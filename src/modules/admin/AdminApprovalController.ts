@@ -195,4 +195,120 @@ export class AdminApprovalController {
     const adminId = req.user.sub;
     return this.adminApprovalService.approveSubService(adminId, dto);
   }
+
+  /**
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 🔹 API #4: Approve/Reject Service Update Request
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ */
+@Post('service-update')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({
+  summary: 'Approve or reject a service update request',
+  description: `
+    Admin reviews a provider's request to update an existing service.
+    
+    On approval:
+    - Service status is set back to ACTIVE
+    - Approved sub-services are marked as available
+    - Rejected sub-services are deleted
+    
+    On rejection:
+    - Service status is set to REJECTED
+    - Provider is notified with the rejection reason
+  `,
+})
+@ApiResponse({
+  status: 200,
+  description: 'Request processed successfully',
+  schema: {
+    example: {
+      success: true,
+      statusCode: 200,
+      message: 'Service update approved successfully',
+      data: {
+        serviceId: 'uuid-789',
+        serviceName: 'PHOTOGRAPHY',
+        approvalStatus: 'ACTIVE',
+        approvedSubServices: 2,
+        rejectedSubServices: 1,
+        adminMessage: null,
+      },
+    },
+  },
+})
+@ApiResponse({
+  status: 400,
+  description: 'Service is not pending an update review',
+})
+@ApiResponse({
+  status: 403,
+  description: 'User is not an admin',
+})
+@ApiResponse({
+  status: 404,
+  description: 'Service not found',
+})
+async approveServiceUpdate(@Request() req, @Body() dto: ApproveServiceDto) {
+  const adminId = req.user.sub;
+  return this.adminApprovalService.approveServiceUpdate(adminId, dto);
+}
+
+/**
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 🔹 API #5: Approve/Reject Sub-Service Update Request
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ */
+@Post('sub-service-update')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({
+  summary: 'Approve or reject a sub-service update request',
+  description: `
+    Admin reviews a provider's request to update an existing sub-service.
+
+    On approval:
+    - Sub-service is marked as available (isAvailable = true)
+    - Provider is notified that the update went live
+
+    On rejection:
+    - Sub-service is marked as unavailable (isAvailable = false)
+    - Provider is notified with the rejection reason
+  `,
+})
+@ApiResponse({
+  status: 200,
+  description: 'Request processed successfully',
+  schema: {
+    example: {
+      success: true,
+      statusCode: 200,
+      message: 'Sub-service update approved successfully',
+      data: {
+        subServiceId: 'uuid-321',
+        subServiceName: 'Buffet Setup',
+        status: 'ACTIVE',
+        adminMessage: null,
+      },
+    },
+  },
+})
+@ApiResponse({
+  status: 400,
+  description: 'Parent service must be ACTIVE to review sub-service updates',
+})
+@ApiResponse({
+  status: 403,
+  description: 'User is not an admin',
+})
+@ApiResponse({
+  status: 404,
+  description: 'Sub-service not found',
+})
+async approveSubServiceUpdate(
+  @Request() req,
+  @Body() dto: ApproveSubServiceDto,
+) {
+  const adminId = req.user.sub;
+  return this.adminApprovalService.approveSubServiceUpdate(adminId, dto);
+}
 }

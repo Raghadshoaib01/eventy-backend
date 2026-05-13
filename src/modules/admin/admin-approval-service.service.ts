@@ -438,4 +438,133 @@ export class AdminApprovalService {
       };
     }
   }
+  // قبول/رفض طلب تحديث خدمة
+async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
+  const service = await this.prisma.service.findUnique({
+    where: { id: dto.serviceId },
+    include: {
+      serviceType: true,
+      provider: { include: { user: true } },
+      subServices: true,
+    },
+  });
+
+  if (!service) throw new NotFoundException('Service not found');
+
+  if (service.approvalStatus !== 'PENDING_DETAILS') {
+    throw new BadRequestException(
+      `Service is not pending update review. Current status: ${service.approvalStatus}`,
+    );
+  }
+
+  if (dto.isApproved) {
+    await this.prisma.$transaction(async (tx) => {
+      await tx.service.update({
+        where: { id: dto.serviceId },
+        data: { approvalStatus: 'ACTIVE' },
+      });
+
+      if (dto.rejectedSubServiceIds?.length) {
+        await tx.subService.deleteMany({
+          where: {
+            id: { in: dto.rejectedSubServiceIds },
+            serviceId: dto.serviceId,
+          },
+        });
+      }
+
+      if (dto.approvedSubServiceIds?.length) {
+        await tx.subService.updateMany({
+          where: {
+            id: { in: dto.approvedSubServiceIds },
+            serviceId: dto.serviceId,
+          },
+          data: { isAvailable: true },
+        });
+      }
+    });
+
+    return {
+      message: 'Service update approved successfully',
+      data: {
+        serviceId: service.id,
+        serviceName: service.serviceType.name,
+        approvalStatus: 'ACTIVE',
+        approvedSubServices: dto.approvedSubServiceIds?.length ?? 0,
+        rejectedSubServices: dto.rejectedSubServiceIds?.length ?? 0,
+        adminMessage: dto.adminMessage ?? null,
+      },
+    };
+  } else {
+    await this.prisma.service.update({
+      where: { id: dto.serviceId },
+      data: { approvalStatus: 'REJECTED' },
+    });
+
+    return {
+      message: 'Service update rejected',
+      data: {
+        serviceId: service.id,
+        serviceName: service.serviceType.name,
+        approvalStatus: 'REJECTED',
+        adminMessage: dto.adminMessage ?? null,
+      },
+    };
+  }
+}
+
+// قبول/رفض طلب تحديث خدمة فرعية
+async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
+  const subService = await this.prisma.subService.findUnique({
+    where: { id: dto.subServiceId },
+    include: {
+      service: {
+        include: {
+          serviceType: true,
+          provider: { include: { user: true } },
+        },
+      },
+    },
+  });
+
+  if (!subService) throw new NotFoundException('Sub-service not found');
+
+  if (subService.service.approvalStatus !== 'ACTIVE') {
+    throw new BadRequestException(
+      'Parent service must be ACTIVE to review sub-service updates',
+    );
+  }
+
+  if (dto.isApproved) {
+    await this.prisma.subService.update({
+      where: { id: dto.subServiceId },
+      data: { isAvailable: true },
+    });
+
+    return {
+      message: 'Sub-service update approved successfully',
+      data: {
+        subServiceId: subService.id,
+        subServiceName: subService.name,
+        status: 'ACTIVE',
+        adminMessage: dto.adminMessage ?? null,
+      },
+    };
+  } else {
+    await this.prisma.subService.update({
+      where: { id: dto.subServiceId },
+      data: { isAvailable: false },
+    });
+
+    return {
+      message: 'Sub-service update rejected',
+      data: {
+        subServiceId: subService.id,
+        subServiceName: subService.name,
+        status: 'REJECTED',
+        adminMessage: dto.adminMessage ?? null,
+      },
+    };
+  }
+}
 }

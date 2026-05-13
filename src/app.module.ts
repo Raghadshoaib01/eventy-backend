@@ -40,8 +40,9 @@ import { ProviderAuthController } from './modules/providers/provider-auth.contro
       isGlobal: true,
       useFactory: async () => ({
         store: await redisStore({
-          host: process.env.REDIS_HOST ?? 'localhost',
-          port: parseInt(process.env.REDIS_PORT ?? '6379'),
+          url: process.env.REDIS_URL ?? `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
+          // host: process.env.REDIS_HOST ?? 'localhost',
+          // port: parseInt(process.env.REDIS_PORT ?? '6379'),
         }),
       }),
     }),

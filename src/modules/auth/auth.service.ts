@@ -5,6 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { UsersService } from '../users/users.service';
 import { OtpService } from './otp.service';
 import { RegisterDto } from './dto/register.dto';
@@ -26,6 +27,7 @@ import {
 } from 'src/common/helpers/token.helper';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { DomainEvents, UserVerifiedPayload } from 'src/common/events/domain-events';
 
 @Injectable()
 export class AuthService {
@@ -34,6 +36,7 @@ export class AuthService {
     private readonly otpService: OtpService,
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly eventEmitter: EventEmitter2,
   ) {}
   // signup → ينشئ مستخدم ويرسل OTP
   async signup(dto: RegisterDto, profileImage?: Express.Multer.File) {
@@ -103,7 +106,15 @@ export class AuthService {
       },
     });
 
-    // 3. توليد tokens
+    // Emit USER_VERIFIED domain event — notification pipeline handles the rest
+    this.eventEmitter.emit(DomainEvents.USER_VERIFIED, {
+      actorId: user.id,
+      targetUserId: user.id,
+      entityId: user.id,
+      email: user.email,
+    } as UserVerifiedPayload);
+
+    // Generate tokens
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     return {
       message: 'Email verified successfully',

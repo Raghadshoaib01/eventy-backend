@@ -33,9 +33,32 @@ enum NotificationType {
   PASSWORD_CHANGED
   PASSWORD_RESET
   ACCOUNT_BLOCKED
+  ACCOUNT_UNBLOCKED
   ACCOUNT_VERIFIED
   LOGIN_ALERT
+  BOOKING_CREATED
+  BOOKING_ACCEPTED
+  BOOKING_REJECTED
+  BOOKING_COMPLETED
+  BOOKING_CANCELLED
+  PROVIDER_APPROVED
+  PROVIDER_REJECTED
+  SERVICE_APPROVED
+  SERVICE_REJECTED
+  PAYMENT_CONFIRMED
   GENERAL
+}
+
+enum DeliveryStatus {
+  PENDING
+  SENT
+  FAILED
+}
+
+enum Platform {
+  IOS
+  ANDROID
+  WEB
 }
 
 enum AuditAction {
@@ -49,6 +72,13 @@ enum AuditAction {
   VERIFY
   PASSWORD_CHANGE
   PASSWORD_RESET
+  APPROVE
+  REJECT
+  BOOKING_CREATE
+  BOOKING_ACCEPT
+  BOOKING_REJECT
+  BOOKING_COMPLETE
+  BOOKING_CANCEL
 }
 
 enum CapacityUnit {
@@ -134,11 +164,14 @@ model User {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
+  deletedAt     DateTime?
+
   customer      Customer?
   provider      ServiceProvider?
   bankAccount   BankAccount?
   refreshTokens RefreshToken[]
   notifications Notification[]
+  deviceTokens  DeviceToken[]
   auditLogs     AuditLog[]       @relation("UserAuditLogs")
   bookings      Booking[]
 }
@@ -406,15 +439,33 @@ model RefreshToken {
 }
 
 model Notification {
-  id        String           @id @default(uuid())
-  title     String
-  body      String
-  type      NotificationType
-  isRead    Boolean          @default(false)
-  userId    String
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime         @default(now())
+  id             String           @id @default(uuid())
+  title          String
+  body           String
+  type           NotificationType
+  isRead         Boolean          @default(false)
+  deliveryStatus DeliveryStatus   @default(PENDING)
+  metadata       Json?
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
+  @@index([userId])
+  @@index([deliveryStatus])
+}
+
+model DeviceToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String
+  platform  Platform @default(WEB)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, token])
   @@index([userId])
 }
 

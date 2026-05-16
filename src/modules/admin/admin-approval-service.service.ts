@@ -2,8 +2,8 @@ import {
   Injectable,
   NotFoundException,
   BadRequestException,
-  ForbiddenException,
 } from '@nestjs/common';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from 'src/database/prisma.service';
 import {
   ApproveProviderJoinDto,
@@ -11,10 +11,21 @@ import {
   ApproveSubServiceDto,
 } from './dto/ApproveProviderJoinDto';
 import { ApprovalStatus } from 'src/shared/Enums/approval-status.enum';
+import {
+  DomainEvents,
+  ProviderApprovedPayload,
+  ProviderRejectedPayload,
+  ServiceApprovedPayload,
+  ServiceRejectedPayload,
+} from 'src/common/events/domain-events';
 
 @Injectable()
 export class AdminApprovalService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly eventEmitter: EventEmitter2,
+  ) {}
+
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -82,26 +93,16 @@ export class AdminApprovalService {
         });
       });
 
-      // TODO: إرسال بريد إلكتروني للترحيب
-      console.log(`
-        📧 إرسال بريد ترحيب إلى: ${provider.user.email}
-        
-        مرحباً ${provider.user.fullName}،
-        
-        تم قبول طلب انضمامك كمزود خدمة في منصة Eventy! 🎉
-        
-        معلومات الحساب:
-        - اسم العمل: ${provider.businessName}
-        - نوع الخدمة: ${service.serviceType.name}
-        - حالة الحساب: مقبول ✅
-        
-        الخطوة التالية:
-        يرجى إكمال تفاصيل الخدمة من خلال لوحة التحكم الخاصة بك.
-        
-        ${dto.adminMessage ? `ملاحظة من الإدارة: ${dto.adminMessage}` : ''}
-        
-        مع تحيات فريق Eventy
-      `);
+      // Emit domain event — notification pipeline handles delivery
+      this.eventEmitter.emit(DomainEvents.PROVIDER_APPROVED, {
+        actorId: adminId,
+        targetUserId: provider.userId,
+        entityId: provider.id,
+        providerId: provider.id,
+        businessName: provider.businessName,
+        adminMessage: dto.adminMessage,
+      } as ProviderApprovedPayload);
+
 
       return {
         message: 'Provider approved successfully',
@@ -142,24 +143,16 @@ export class AdminApprovalService {
         });
       });
 
-      // TODO: إرسال بريد إلكتروني بالاعتذار
-      console.log(`
-        📧 إرسال بريد اعتذار إلى: ${provider.user.email}
-        
-        عزيزي ${provider.user.fullName},
-        
-        نأسف لإبلاغك بأنه تم رفض طلب انضمامك كمزود خدمة في منصة Eventy.
-        
-        معلومات الطلب:
-        - اسم العمل: ${provider.businessName}
-        - نوع الخدمة: ${service.serviceType.name}
-        
-        ${dto.adminMessage ? `سبب الرفض: ${dto.adminMessage}` : ''}
-        
-        يمكنك إعادة التقديم بعد تحسين المعلومات المطلوبة.
-        
-        مع تحيات فريق Eventy
-      `);
+      // Emit domain event — notification pipeline handles delivery
+      this.eventEmitter.emit(DomainEvents.PROVIDER_REJECTED, {
+        actorId: adminId,
+        targetUserId: provider.userId,
+        entityId: provider.id,
+        providerId: provider.id,
+        businessName: provider.businessName,
+        adminMessage: dto.adminMessage,
+      } as ProviderRejectedPayload);
+
 
       return {
         message: 'Provider rejected',
@@ -250,25 +243,16 @@ export class AdminApprovalService {
       const approvedCount = dto.approvedSubServiceIds?.length || 0;
       const rejectedCount = dto.rejectedSubServiceIds?.length || 0;
 
-      // TODO: إرسال بريد إلكتروني
-      console.log(`
-        📧 إرسال بريد ترحيب إلى: ${service.provider.user.email}
-        
-        مرحباً ${service.provider.user.fullName},
-        
-        تم قبول خدمتك الجديدة في منصة Eventy! 🎉
-        
-        معلومات الخدمة:
-        - نوع الخدمة: ${service.serviceType.name}
-        - الخدمات الفرعية المتاحة: ${approvedCount}
-        ${rejectedCount > 0 ? `- الخدمات الفرعية المحذوفة: ${rejectedCount}` : ''}
-        
-        ${dto.adminMessage ? `ملاحظة من الإدارة: ${dto.adminMessage}` : ''}
-        
-        يمكنك الآن البدء باستقبال الحجوزات!
-        
-        مع تحيات فريق Eventy
-      `);
+      // Emit domain event — notification pipeline handles delivery
+      this.eventEmitter.emit(DomainEvents.SERVICE_APPROVED, {
+        actorId: adminId,
+        targetUserId: service.provider.userId,
+        entityId: service.id,
+        serviceId: service.id,
+        serviceName: service.serviceType.name,
+        adminMessage: dto.adminMessage,
+      } as ServiceApprovedPayload);
+
 
       return {
         message: 'Service approved successfully',
@@ -300,23 +284,16 @@ export class AdminApprovalService {
         });
       });
 
-      // TODO: إرسال بريد إلكتروني بالاعتذار
-      console.log(`
-        📧 إرسال بريد اعتذار إلى: ${service.provider.user.email}
-        
-        عزيزي ${service.provider.user.fullName},
-        
-        نأسف لإبلاغك بأنه تم رفض خدمتك الجديدة.
-        
-        معلومات الخدمة:
-        - نوع الخدمة: ${service.serviceType.name}
-        
-        ${dto.adminMessage ? `سبب الرفض: ${dto.adminMessage}` : ''}
-        
-        يمكنك تعديل المعلومات وإعادة التقديم.
-        
-        مع تحيات فريق Eventy
-      `);
+      // Emit domain event — notification pipeline handles delivery
+      this.eventEmitter.emit(DomainEvents.SERVICE_REJECTED, {
+        actorId: adminId,
+        targetUserId: service.provider.userId,
+        entityId: service.id,
+        serviceId: service.id,
+        serviceName: service.serviceType.name,
+        adminMessage: dto.adminMessage,
+      } as ServiceRejectedPayload);
+
 
       return {
         message: 'Service rejected',

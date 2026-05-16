@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
 import { CacheModule } from '@nestjs/cache-manager';
+import { EventEmitterModule } from '@nestjs/event-emitter';
 import { redisStore } from 'cache-manager-ioredis-yet';
 import { DatabaseModule } from './database/database.module';
 import { UsersModule } from './modules/users/users.module';
@@ -16,37 +18,45 @@ import { ReportsModule } from './modules/reports/reports.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { BookingsModule } from './modules/bookings/bookings.module';
 import { ProviderProfileController } from './modules/providers/provider profail.controller';
-// import { ServiceService } from './details/modules/services/services/service/service.service';
-// import { ServiceService } from './details/modules/services/service/service.service';
-// import { ServiceService } from './details/service/service.service';
-// import { ServiceService } from './modules/services/service details.service';
 import { ProviderProfileService } from './modules/providers/provider profail services.service';
-// import { ProviderController } from './modules/providers/provider profail.controller';
 import { AdminModule } from './modules/admin/admin.module';
 import { AdminApprovalController } from './modules/admin/AdminApprovalController';
 import { AdminApprovalService } from './modules/admin/admin-approval-service.service';
 import { ProviderAuthController } from './modules/providers/provider-auth.controller';
-
+import { FirebaseModule } from './firebase/firebase.module';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { ActionTrackingInterceptor } from './common/interceptors/action-tracking.interceptor';
 
 @Module({
   imports: [
+    // Configuration (global)
     ConfigModule.forRoot({ isGlobal: true }),
 
-    // 2. DatabaseModule يوفر PrismaService لكل المشروع (@Global)
+    // Event-driven architecture bus
+    EventEmitterModule.forRoot({
+      wildcard: false,
+      delimiter: '.',
+      maxListeners: 20,
+      verboseMemoryLeak: true,
+    }),
+
+    // Firebase Admin SDK (global)
+    FirebaseModule,
+
+    // Database — PrismaService (@Global)
     DatabaseModule,
 
-    // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
+    // Redis Cache (@Global)
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
         store: await redisStore({
           url: process.env.REDIS_URL ?? `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
-          // host: process.env.REDIS_HOST ?? 'localhost',
-          // port: parseInt(process.env.REDIS_PORT ?? '6379'),
         }),
       }),
     }),
 
+    // Feature modules
     UsersModule,
     AuthModule,
     SharedModule,
@@ -62,15 +72,23 @@ import { ProviderAuthController } from './modules/providers/provider-auth.contro
     ProviderBookingsController,
     ProviderProfileController,
     AdminApprovalController,
-   //ProviderController
   ],
   providers: [
     AppService,
     ProviderBookingsService,
     ProviderProfileService,
-    AdminApprovalService
-    ,
-    
+    AdminApprovalService,
+
+    // Global interceptors registered via APP_INTERCEPTOR for DI support
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: LoggingInterceptor,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: ActionTrackingInterceptor,
+    },
   ],
 })
 export class AppModule {}
+

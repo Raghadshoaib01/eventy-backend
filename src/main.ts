@@ -20,7 +20,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   setupSwagger(app);
-  await app.listen(3000);
+
+  await app.listen(parseInt(process.env.PORT) || 3000, '::');
   console.log(`🚀 Server running on http://localhost:3000/api/v1`);
   console.log(`📖 Swagger docs at http://localhost:3000/api/docs`);
 }

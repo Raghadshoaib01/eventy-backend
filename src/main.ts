@@ -1,16 +1,29 @@
 import * as dotenv from 'dotenv';
 import * as path from 'path';
+import * as fs from 'fs'; 
+// 1. تحديد الملف المطلوب بناءً على البيئة
+const nodeEnv = process.env.NODE_ENV || 'development';
+const envFile = nodeEnv === 'production' ? '.env.production' : '.env.development';
+const envPath = path.resolve(process.cwd(), envFile);
+let isFileLoaded = false;
 
-// يجب أن يكون هذا أول شيء قبل أي import آخر
-const envFile = process.env.NODE_ENV === 'production'
-  ? '.env.production'
-  : '.env.development';
+// 2. الفحص الذكي: لو الملف موجود محلياً اقرأ منه، لو مش موجود (مثل Railway) اعتمد على السيرفر
+if (fs.existsSync(envPath)) {
+  dotenv.config({ path: envPath });
+  isFileLoaded = true;
+} else {
+  // إذا لم يجد الملف (مثل وضع Railway)، سيعتمد مباشرة على بيئة السيرفر المباشرة
+  dotenv.config(); 
+}
 
-dotenv.config({ path: path.resolve(process.cwd(), envFile) });
 import { Logger } from '@nestjs/common';
 const startupLogger = new Logger('Bootstrap');
-startupLogger.log(`📄 Loaded env file: ${envFile}`);
-
+// طباعة توضيحية لمصدر الإعدادات
+if (isFileLoaded) {
+  startupLogger.log(`📄 Loaded variables from local file: ${envFile}`);
+} else {
+  startupLogger.log(`☁️ No local env file found. Using environment variables directly from the Server.`);
+}
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe } from '@nestjs/common';
@@ -44,7 +57,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new TransformInterceptor());
   app.useGlobalFilters(new HttpExceptionFilter());
   setupSwagger(app);
-  const port = process.env.APP_PORT || 3000;
+const port = process.env.PORT || process.env.APP_PORT || 3000;
 
   await app.listen(port);
   // console.log(`🚀 Server running on http://localhost:3000/api/v1`);

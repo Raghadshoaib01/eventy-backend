@@ -17,6 +17,14 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   onModuleInit() {
     this.client = new Redis(
       this.configService.get<string>('REDIS_URL'),
+      {
+      tls: {
+        // هذا الخيار يمنع السيرفر من رفض الاتصال بسبب شهادات الأمان الذاتية في البيئات السحابية
+        rejectUnauthorized: false 
+      },
+      // اختياري ولكن موصى به: يمنع التطبيق من تكرار محاولات الاتصال بشكل جنوني إذا فصل السيرفر
+      maxRetriesPerRequest: 3 
+    }
     );
     this.client.on('connect', () => this.logger.log('Redis connected'));
     this.client.on('error', (err) => this.logger.error('Redis error', err));

@@ -15,18 +15,15 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly configService: ConfigService) {}
 
   onModuleInit() {
-    this.client = new Redis(
-      this.configService.get<string>('REDIS_URL'),
-      {
-        family: 4, // 👈 هذه الإضافة تجبر التطبيق على استخدام IPv4 وتمنع رفض الاتصال
-      tls: {
-        // هذا الخيار يمنع السيرفر من رفض الاتصال بسبب شهادات الأمان الذاتية في البيئات السحابية
-        rejectUnauthorized: false 
-      },
-      // اختياري ولكن موصى به: يمنع التطبيق من تكرار محاولات الاتصال بشكل جنوني إذا فصل السيرفر
-      maxRetriesPerRequest: 3 
-    }
-    );
+     const url = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+  const isTls = url.startsWith('rediss://');
+
+    this.client = new Redis(url, {
+    family: 4,
+    maxRetriesPerRequest: 3,
+    ...(isTls && { tls: { rejectUnauthorized: false } }),
+  });
+
     this.client.on('connect', () => this.logger.log('Redis connected'));
     this.client.on('error', (err) => this.logger.error('Redis error', err));
   }

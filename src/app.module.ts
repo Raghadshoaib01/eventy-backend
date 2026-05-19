@@ -26,11 +26,15 @@ import { AdminModule } from './modules/admin/admin.module';
 import { AdminApprovalController } from './modules/admin/AdminApprovalController';
 import { AdminApprovalService } from './modules/admin/admin-approval-service.service';
 import { ProviderAuthController } from './modules/providers/provider-auth.controller';
+import redisConfig from './config/redis.config';
 
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ 
+      isGlobal: true,
+      load: [redisConfig], 
+     }),
 
     // 2. DatabaseModule يوفر PrismaService لكل المشروع (@Global)
     DatabaseModule,
@@ -39,16 +43,18 @@ import { ProviderAuthController } from './modules/providers/provider-auth.contro
    // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: async () => ({
-        store: await redisStore({
-          url: process.env.REDIS_URL,
-          // 👈 الإضافات الذهبية لحل المشكلة على السيرفر هنا:
-          family: 4, 
-          tls: {
-            rejectUnauthorized: false,
-          },
-        }),
+      useFactory: async () => {
+      const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+      const isTls = url.startsWith('rediss://');
+
+    return {
+      store: await redisStore({
+        url,
+        family: 4,
+        ...(isTls && { tls: { rejectUnauthorized: false } }),
       }),
+    };
+      }
     }),
 
     UsersModule,

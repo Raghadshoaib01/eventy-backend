@@ -18,6 +18,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
     this.client = new Redis(
       this.configService.get<string>('REDIS_URL'),
       {
+        family: 4, // 👈 هذه الإضافة تجبر التطبيق على استخدام IPv4 وتمنع رفض الاتصال
       tls: {
         // هذا الخيار يمنع السيرفر من رفض الاتصال بسبب شهادات الأمان الذاتية في البيئات السحابية
         rejectUnauthorized: false 

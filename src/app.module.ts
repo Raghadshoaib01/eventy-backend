@@ -36,11 +36,17 @@ import { ProviderAuthController } from './modules/providers/provider-auth.contro
     DatabaseModule,
 
     // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
+   // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
     CacheModule.registerAsync({
       isGlobal: true,
       useFactory: async () => ({
         store: await redisStore({
-          url: process.env.REDIS_URL ,
+          url: process.env.REDIS_URL,
+          // 👈 الإضافات الذهبية لحل المشكلة على السيرفر هنا:
+          family: 4, 
+          tls: {
+            rejectUnauthorized: false,
+          },
         }),
       }),
     }),

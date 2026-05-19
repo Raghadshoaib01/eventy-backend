@@ -21,8 +21,10 @@ import {
   ApproveSubServiceDto,
 } from './dto/ApproveProviderJoinDto';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { AuditAction, UserRole } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
+import { TrackAction } from 'src/common/decorators/track-action.decorator';
+import { DomainEvents } from 'src/common/events/domain-events';
 
 @ApiTags('Admin - Approvals')
 @Controller('admin/approvals')
@@ -40,6 +42,13 @@ export class AdminApprovalController {
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   @Post('provider-join')
+  @TrackAction({
+  action: AuditAction.APPROVE,
+  entity: 'ServiceProvider',
+  audit: true,                               // ✅ حفظ Audit
+  notify: DomainEvents.PROVIDER_APPROVED,    // ✅ إرسال Event
+  entityIdPath: 'providerId'
+})
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'قبول أو رفض طلب انضمام مزود خدمة جديد',

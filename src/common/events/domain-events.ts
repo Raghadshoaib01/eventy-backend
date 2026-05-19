@@ -25,6 +25,10 @@ export const DomainEvents = {
   SERVICE_APPROVED: 'service.approved',
   SERVICE_REJECTED: 'service.rejected',
 
+  // Sub_Service
+  SUB_SERVICE_APPROVED: 'sub_service.approved',
+  SUB_SERVICE_REJECTED: 'sub_service.rejected',
+
   // Payment
   PAYMENT_CONFIRMED: 'payment.confirmed',
 } as const;

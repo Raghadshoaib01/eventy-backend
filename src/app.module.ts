@@ -26,11 +26,15 @@ import { ProviderAuthController } from './modules/providers/provider-auth.contro
 import { FirebaseModule } from './firebase/firebase.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ActionTrackingInterceptor } from './common/interceptors/action-tracking.interceptor';
+import redisConfig from './config/redis.config';
+
 
 @Module({
   imports: [
-    // Configuration (global)
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({ 
+      isGlobal: true,
+      load: [redisConfig], 
+     }),
 
     // Event-driven architecture bus
     EventEmitterModule.forRoot({
@@ -46,14 +50,22 @@ import { ActionTrackingInterceptor } from './common/interceptors/action-tracking
     // Database — PrismaService (@Global)
     DatabaseModule,
 
-    // Redis Cache (@Global)
+    // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
+   // 3. CacheModule يوفر Redis لكل المشروع (للـ OTP)
     CacheModule.registerAsync({
       isGlobal: true,
-      useFactory: async () => ({
-        store: await redisStore({
-          url: process.env.REDIS_URL ?? `redis://${process.env.REDIS_HOST}:${process.env.REDIS_PORT}`,
-        }),
+      useFactory: async () => {
+      const url = process.env.REDIS_URL ?? 'redis://localhost:6379';
+      const isTls = url.startsWith('rediss://');
+
+    return {
+      store: await redisStore({
+        url,
+        family: 4,
+        ...(isTls && { tls: { rejectUnauthorized: false } }),
       }),
+    };
+      }
     }),
 
     // Feature modules

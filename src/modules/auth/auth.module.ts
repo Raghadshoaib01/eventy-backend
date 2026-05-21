@@ -8,6 +8,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { PassportModule } from '@nestjs/passport';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { RedisModule } from 'src/database/redis.module';
+import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Module({
   imports: [UsersModule, PassportModule, RedisModule],
@@ -17,6 +18,8 @@ import { RedisModule } from 'src/database/redis.module';
     JwtStrategy,
     GoogleStrategy,
     CloudinaryService,
+    DomainEventBus,   // ← أضيفي هذا
+
   ],
   controllers: [AuthController],
   exports: [OtpService],

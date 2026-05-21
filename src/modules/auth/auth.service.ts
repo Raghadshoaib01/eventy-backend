@@ -28,6 +28,7 @@ import {
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { DomainEvents, UserVerifiedPayload } from 'src/common/events/domain-events';
+import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Injectable()
 export class AuthService {
@@ -37,6 +38,8 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly domainEventBus: DomainEventBus,   
+
   ) {}
   // signup → ينشئ مستخدم ويرسل OTP
   async signup(dto: RegisterDto, profileImage?: Express.Multer.File) {
@@ -106,14 +109,12 @@ export class AuthService {
       },
     });
 
-    // Emit USER_VERIFIED domain event — notification pipeline handles the rest
-    this.eventEmitter.emit(DomainEvents.USER_VERIFIED, {
-      actorId: user.id,
-      targetUserId: user.id,
-      entityId: user.id,
-      email: user.email,
-    } as UserVerifiedPayload);
-
+this.domainEventBus.userVerified({
+  actorId: user.id,
+  targetUserId: user.id,
+  entityId: user.id,
+  email: user.email,
+});
     // Generate tokens
     const tokens = await this.generateTokens(user.id, user.email, user.role);
     return {

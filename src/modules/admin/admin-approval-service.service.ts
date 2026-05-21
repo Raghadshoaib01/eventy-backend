@@ -18,12 +18,14 @@ import {
   ServiceApprovedPayload,
   ServiceRejectedPayload,
 } from 'src/common/events/domain-events';
+import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Injectable()
 export class AdminApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
+    private readonly domainEventBus: DomainEventBus,   
   ) {}
 
 
@@ -93,16 +95,14 @@ export class AdminApprovalService {
         });
       });
 
-      // Emit domain event — notification pipeline handles delivery
-      this.eventEmitter.emit(DomainEvents.PROVIDER_APPROVED, {
-        actorId: adminId,
-        targetUserId: provider.userId,
-        entityId: provider.id,
-        providerId: provider.id,
-        businessName: provider.businessName,
-        adminMessage: dto.adminMessage,
-      } as ProviderApprovedPayload);
-
+      this.domainEventBus.providerApproved({
+  actorId: adminId,
+  targetUserId: provider.userId,
+  entityId: provider.id,
+  providerId: provider.id,
+  businessName: provider.businessName,
+  adminMessage: dto.adminMessage,
+});
 
       return {
         message: 'Provider approved successfully',
@@ -143,16 +143,14 @@ export class AdminApprovalService {
         });
       });
 
-      // Emit domain event — notification pipeline handles delivery
-      this.eventEmitter.emit(DomainEvents.PROVIDER_REJECTED, {
-        actorId: adminId,
-        targetUserId: provider.userId,
-        entityId: provider.id,
-        providerId: provider.id,
-        businessName: provider.businessName,
-        adminMessage: dto.adminMessage,
-      } as ProviderRejectedPayload);
-
+   this.domainEventBus.providerRejected({
+  actorId: adminId,
+  targetUserId: provider.userId,
+  entityId: provider.id,
+  providerId: provider.id,
+  businessName: provider.businessName,
+  adminMessage: dto.adminMessage,
+});
 
       return {
         message: 'Provider rejected',
@@ -243,16 +241,15 @@ export class AdminApprovalService {
       const approvedCount = dto.approvedSubServiceIds?.length || 0;
       const rejectedCount = dto.rejectedSubServiceIds?.length || 0;
 
-      // Emit domain event — notification pipeline handles delivery
-      this.eventEmitter.emit(DomainEvents.SERVICE_APPROVED, {
-        actorId: adminId,
-        targetUserId: service.provider.userId,
-        entityId: service.id,
-        serviceId: service.id,
-        serviceName: service.serviceType.name,
-        adminMessage: dto.adminMessage,
-      } as ServiceApprovedPayload);
-
+     // بعد
+this.domainEventBus.serviceApproved({
+  actorId: adminId,
+  targetUserId: service.provider.userId,
+  entityId: service.id,
+  serviceId: service.id,
+  serviceName: service.serviceType.name,
+  adminMessage: dto.adminMessage,
+});
 
       return {
         message: 'Service approved successfully',
@@ -284,16 +281,15 @@ export class AdminApprovalService {
         });
       });
 
-      // Emit domain event — notification pipeline handles delivery
-      this.eventEmitter.emit(DomainEvents.SERVICE_REJECTED, {
-        actorId: adminId,
-        targetUserId: service.provider.userId,
-        entityId: service.id,
-        serviceId: service.id,
-        serviceName: service.serviceType.name,
-        adminMessage: dto.adminMessage,
-      } as ServiceRejectedPayload);
-
+     // بعد
+this.domainEventBus.serviceRejected({
+  actorId: adminId,
+  targetUserId: service.provider.userId,
+  entityId: service.id,
+  serviceId: service.id,
+  serviceName: service.serviceType.name,
+  adminMessage: dto.adminMessage,
+});
 
       return {
         message: 'Service rejected',

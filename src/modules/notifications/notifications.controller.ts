@@ -28,7 +28,7 @@ import { DeviceTokenService } from './device-token.service';
 import { SaveDeviceTokenDto } from './dto/save-device-token.dto';
 
 @ApiTags('Notifications')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
@@ -45,7 +45,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Get paginated list of notifications for current user' })
   @ApiResponse({ status: 200, description: 'Notifications retrieved successfully' })
   getUserNotifications(
-    @CurrentUser('id') userId: string,
+    @CurrentUser('sub') userId: string,
     @Query() pagination: PaginationDto,
   ) {
     return this.notificationsService.getUserNotifications(userId, pagination);
@@ -54,7 +54,7 @@ export class NotificationsController {
   @Get('unread-count')
   @ApiOperation({ summary: 'Get the unread notifications count for current user' })
   @ApiResponse({ status: 200, description: 'Unread count retrieved' })
-  getUnreadCount(@CurrentUser('id') userId: string) {
+  getUnreadCount(@CurrentUser('sub') userId: string) {
     return this.notificationsService.getUnreadCount(userId);
   }
 
@@ -65,7 +65,7 @@ export class NotificationsController {
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
   markAsRead(
-    @CurrentUser('id') userId: string,
+    @CurrentUser('sub') userId: string,
     @Param('id') notificationId: string,
   ) {
     return this.notificationsService.markAsRead(userId, notificationId);
@@ -75,7 +75,7 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark all notifications as read for current user' })
   @ApiResponse({ status: 200, description: 'All notifications marked as read' })
-  markAllAsRead(@CurrentUser('id') userId: string) {
+  markAllAsRead(@CurrentUser('sub') userId: string) {
     return this.notificationsService.markAllAsRead(userId);
   }
 
@@ -88,7 +88,7 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Register a device token for push notifications' })
   @ApiResponse({ status: 201, description: 'Device token saved successfully' })
   async saveDeviceToken(
-    @CurrentUser('id') userId: string,
+    @CurrentUser('sub') userId: string,
     @Body() dto: SaveDeviceTokenDto,
   ) {
     await this.deviceTokenService.saveToken(userId, dto);
@@ -101,7 +101,7 @@ export class NotificationsController {
   @ApiParam({ name: 'token', description: 'The device token to remove' })
   @ApiResponse({ status: 200, description: 'Device token removed successfully' })
   async removeDeviceToken(
-    @CurrentUser('id') userId: string,
+    @CurrentUser('sub') userId: string,
     @Param('token') token: string,
   ) {
     await this.deviceTokenService.removeToken(userId, token);
@@ -112,7 +112,7 @@ export class NotificationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Remove all device tokens for current user (full logout)' })
   @ApiResponse({ status: 200, description: 'All device tokens removed' })
-  async removeAllDeviceTokens(@CurrentUser('id') userId: string) {
+  async removeAllDeviceTokens(@CurrentUser('sub') userId: string) {
     await this.deviceTokenService.removeAllTokens(userId);
     return { message: 'All device tokens removed successfully', data: null };
   }

@@ -6,9 +6,9 @@ import { NotificationsController } from './notifications.controller';
 import { NotificationsService } from './notifications.service';
 import { NotificationsListener } from './notifications.listener';
 import { DeviceTokenService } from './device-token.service';
-import { ConsoleNotificationProvider } from './providers/console-notification.provider';
 import { FirebaseNotificationProvider } from './providers/firebase-notification.provider';
-import { NotificationTransportFactory } from './providers/notification-transport.factory';
+import { NotificationDispatcher } from './providers/notification-dispatcher';
+import { NotificationDebugLogger } from './providers/notification-debug-logger';
 
 /**
  * NotificationsModule — @Global
@@ -27,14 +27,10 @@ import { NotificationTransportFactory } from './providers/notification-transport
     // Core services
     NotificationsService,
     DeviceTokenService,
-
-    // Event listener (auto-discovered by @nestjs/event-emitter)
     NotificationsListener,
-
-    // Transport layer
-    ConsoleNotificationProvider,
     FirebaseNotificationProvider,
-    NotificationTransportFactory,
+    NotificationDebugLogger,
+    NotificationDispatcher, 
   ],
   exports: [NotificationsService, DeviceTokenService],
 })

@@ -27,6 +27,7 @@ import { FirebaseModule } from './firebase/firebase.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ActionTrackingInterceptor } from './common/interceptors/action-tracking.interceptor';
 import redisConfig from './config/redis.config';
+import { DomainEventBus } from './common/events/domain-event-bus';
 
 
 @Module({
@@ -90,7 +91,7 @@ import redisConfig from './config/redis.config';
     ProviderBookingsService,
     ProviderProfileService,
     AdminApprovalService,
-
+    DomainEventBus,
     // Global interceptors registered via APP_INTERCEPTOR for DI support
     {
       provide: APP_INTERCEPTOR,

@@ -6,6 +6,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { DeviceTokenService } from './device-token.service';
 import { NotificationTransportFactory } from './providers/notification-transport.factory';
+import { NotificationDispatcher } from './providers/notification-dispatcher';
 
 export interface CreateNotificationOptions {
   userId: string;
@@ -36,7 +37,7 @@ export class NotificationsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly deviceTokenService: DeviceTokenService,
-    private readonly transportFactory: NotificationTransportFactory,
+  private readonly dispatcher: NotificationDispatcher, 
   ) {}
 
   // ─────────────────────────────────────────────────────────────
@@ -76,25 +77,23 @@ export class NotificationsService {
     // 2. Attempt push delivery (non-blocking side-effect)
     try {
       const tokens = await this.deviceTokenService.getUserTokens(userId);
-      const transport = this.transportFactory.resolve();
-
-      const result = await transport.send(userId, tokens, { title, body }, type);
-
-      const status = result.success ? DeliveryStatus.SENT : DeliveryStatus.FAILED;
-
-      // 3. Update delivery status
-      await this.prisma.notification.update({
-        where: { id: notificationId },
-        data: { deliveryStatus: status },
-      });
-
-      // 4. Clean up invalid tokens
-      if (result.failedTokens?.length) {
-        await this.deviceTokenService.removeInvalidTokens(
+      const result = await this.dispatcher.dispatch(
           userId,
-          result.failedTokens,
+          tokens,
+          { title, body },
+          type,
         );
-      }
+
+        const status = result.success ? DeliveryStatus.SENT : DeliveryStatus.FAILED;
+
+        await this.prisma.notification.update({
+          where: { id: notificationId },
+          data: { deliveryStatus: status },
+        });
+
+        if (result.failedTokens?.length) {
+          await this.deviceTokenService.removeInvalidTokens(userId, result.failedTokens);
+        }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.warn(

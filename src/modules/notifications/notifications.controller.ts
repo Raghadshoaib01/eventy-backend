@@ -26,6 +26,7 @@ import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { NotificationsService } from './notifications.service';
 import { DeviceTokenService } from './device-token.service';
 import { SaveDeviceTokenDto } from './dto/save-device-token.dto';
+import { NotificationType } from '@prisma/client';
 
 @ApiTags('Notifications')
 @ApiBearerAuth('JWT-auth')
@@ -116,4 +117,23 @@ export class NotificationsController {
     await this.deviceTokenService.removeAllTokens(userId);
     return { message: 'All device tokens removed successfully', data: null };
   }
+  ////////////////////////test notification 
+  // src/modules/notifications/notifications.controller.ts
+// أضف في نهاية الـ controller
+
+@Post('test')
+@HttpCode(HttpStatus.OK)
+@ApiOperation({ summary: 'Test push notification for current user (dev only)' })
+@ApiResponse({ status: 200, description: 'Test notification sent' })
+async testNotification(@CurrentUser('sub') userId: string) {
+  await this.notificationsService.createAndDeliver({
+    userId,
+    type: NotificationType.GENERAL,
+    title: 'Test Notification 🔔',
+    body: 'If you see this on your device, push is working!',
+    metadata: { source: 'manual-test' },
+  });
+
+  return { message: 'Test notification triggered', data: null };
+}
 }

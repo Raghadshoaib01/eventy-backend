@@ -47,16 +47,32 @@ export class FirebaseService implements OnModuleInit {
     }
 
     try {
+const rawKey = this.config.get<string>('FIREBASE_PRIVATE_KEY') ?? '';
+const privateKey = rawKey
+  .replace(/\\n/g, '\n')
+  .trim()                    // يحذف أي spaces أو newlines من الأطراف
+  .replace(/^["',]+|["',]+$/g, '') // يحذف " أو ' أو , من البداية والنهاية
+  .trim();                   // trim مرة ثانية بعد الحذف
+  // ── DEBUG ──
+console.log('=== Firebase Key Debug ===');
+console.log('Raw length:', rawKey.length);
+console.log('Processed length:', privateKey.length);
+console.log('Starts with:', JSON.stringify(privateKey.substring(0, 50)));
+console.log('Ends with:', JSON.stringify(privateKey.substring(privateKey.length - 50)));
+console.log('Contains real newline:', privateKey.includes('\n'));
+console.log('Contains literal \\n:', privateKey.includes('\\n'));
+console.log('Line count:', privateKey.split('\n').length);
+console.log('==========================');
       // Avoid re-initialising if already initialised (e.g. hot-reload)
       this.app =
         admin.apps.find((a) => a?.name === 'eventy') ??
         admin.initializeApp(
           {
             credential: admin.credential.cert({
-               projectId: process.env.FIREBASE_PROJECT_ID,
-    clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
-    privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-            }),
+           projectId,       // ← المتغير المحوّل من أعلى
+        clientEmail,     // ← المتغير المحوّل من أعلى
+        privateKey,      // ← المتغير المحوّل من أعلى (وليس process.env)
+        }),
           },
           'eventy',
         );

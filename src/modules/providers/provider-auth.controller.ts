@@ -9,6 +9,7 @@ import {
   Get,
   UseGuards,
   Request,
+  UploadedFiles,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -18,7 +19,7 @@ import {
   ApiConsumes,
   ApiBody,
 } from '@nestjs/swagger';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor, FileInterceptor } from '@nestjs/platform-express';
 import { ProviderAuthService } from './provider-auth.service';
 import { RegisterProviderDto } from './dto/register-provider.dto';
 import { LoginDto } from 'src/modules/auth/dto/login.dto';
@@ -31,7 +32,12 @@ export class ProviderAuthController {
 
   // ========== API #1: Provider Registration ==========
   @Post('register')
-  @UseInterceptors(FileInterceptor('profileImage'))
+  @UseInterceptors( FileFieldsInterceptor([
+    { name: 'profileImage', maxCount: 1 },
+    { name: 'serviceLogo', maxCount: 1 },
+    { name: 'businessFile', maxCount: 1 },
+  ]),
+    )
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
     summary: 'Register new service provider (3 steps in one request)',
@@ -39,60 +45,24 @@ export class ProviderAuthController {
       'Step 1: Account Info | Step 2: Business Info + Location (Map) | Step 3: First Service Info (no sub-services for halls and djs)',
   })
   @ApiBody({ type: RegisterProviderDto })
-  //   @ApiBody({
-  //     schema: {
-  //       type: 'object',
-  //       required: [
-  //         'fullName', 'email', 'phoneNumber', 'password',
-  //         'businessName', 'businessLicense',
-  //         //'iban', 'bankName', 'accountHolderName',
-  //         'serviceType', 'eventTypes',
-  //         //'availableFrom', 'availableTo', 'dailyCapacity', 'capacityUnit'
-  //       ],
-  //       properties: {
-  //         // Step 1: Account
-  //         fullName: { type: 'string', example: 'Ahmad Mohammad' },
-  //         email: { type: 'string', example: 'ahmad@alnoor.com' },
-  //         phoneNumber: { type: 'string', example: '+962791234567' },
-  //         password: { type: 'string', example: 'Password@123' },
-  //         locationName: {type: 'string', example: '123 Main St'},
-  //         longitude:    {type: 'Number', example: '35.9106'},
-  //         latitude:     {type: 'Number', example: '35.9106'},
-  //         // Step 2: Business
-  //         businessName: { type: 'string', example: 'Al-Noor Catering' },
-  //         businessLicense: { type: 'string', example: 'CR-12345678' },
-  //         //iban: { type: 'string', example: 'JO00 0000 0000 0000 0000 0000 00' },
-  //         //bankName: { type: 'string', example: 'Arab Bank' },
-  //         //accountHolderName: { type: 'string', example: 'Ahmad Mohammad' },
-
-  //         // Step 3: Service
-  //  serviceTypeId: {
-  //         type: 'string',
-  //         example: '0c20ea51-abc5-46e7-aa1a-1d07cf7a148a',
-  //         description: 'Get this from GET /service-types'
-  //       },
-  //         eventTypes: { type: 'array', items: { type: 'string' }, example: ['WEDDING', 'ENGAGEMENT'] },
-  //         description: { type: 'string', example: 'Premium catering service' },
-  //         // availableFrom: { type: 'string', example: '08:00' },
-  //         // availableTo: { type: 'string', example: '23:00' },
-  //         // dailyCapacity: { type: 'number', example: 5 },
-  //         // capacityUnit: { type: 'string', enum: ['BOOKING', 'ITEM', 'SESSION'], example: 'BOOKING' },
-
-  //         // Optional
-  //          minCapacity: { type: 'number', example: 50 },
-  //         maxCapacity: { type: 'number', example: 500 },
-  //         price: { type: 'number', example: 2000 },
-  //        profileImage: { type: 'string', format: 'binary' },
-  //       },
-  //     },
-  //   })
+  
   @ApiResponse({ status: 201, description: 'OTP sent to email' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   async registerProvider(
     @Body() dto: RegisterProviderDto,
-    @UploadedFile() profileImage?: Express.Multer.File,
+@UploadedFiles()
+  files: {
+    profileImage?: Express.Multer.File[];
+    serviceLogo?: Express.Multer.File[];
+    businessFile?: Express.Multer.File[];
+  },
   ) {
-    return this.providerAuthService.registerProvider(dto, profileImage);
+    return this.providerAuthService.registerProvider(
+      dto,
+      files?.profileImage?.[0],
+      files?.serviceLogo?.[0],
+      files?.businessFile?.[0],
+  );
   }
 
   // ========== Provider Login ==========

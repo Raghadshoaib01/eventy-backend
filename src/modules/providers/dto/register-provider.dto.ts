@@ -83,7 +83,7 @@ export class RegisterProviderDto {
 
   // ========== STEP 3: Initial Service Info (معلومات أولية فقط) ==========
   @ApiProperty({
-    example: 'uuid-of-food-service-type',
+    example: '8373cc8a-f902-42d8-a824-f73734df8694',
     description: 'Service Type UUID (Get from /service-types endpoint)',
   })
   // @IsEnum(['FOOD', 'PHOTOGRAPHY', 'FAVORS', 'DECORATION', 'HALL', 'SOUND'])
@@ -125,19 +125,25 @@ export class RegisterProviderDto {
   description: string;
 
   // For HALL/SOUND only - يتم إرسالها في التسجيل
-  @ApiProperty({ example: 50, required: false })
+  @ApiProperty({ example: 50, required: false 
+        ,description: 'For HALL/SOUND only',
+        })
   @IsNumber()
   @IsOptional()
   @Type(() => Number)
   minCapacity?: number;
 
-  @ApiProperty({ example: 500, required: false })
+  @ApiProperty({ example: 500, required: false
+            ,description: 'For HALL/SOUND only',
+   })
   @IsNumber()
   @IsOptional()
   @Type(() => Number)
   maxCapacity?: number;
 
-  @ApiProperty({ example: 2000, required: false })
+  @ApiProperty({ example: 2000, required: false
+                ,description: 'For HALL/SOUND only',
+   })
   @IsNumber()
   @IsOptional()
   @Type(() => Number)
@@ -149,4 +155,19 @@ export class RegisterProviderDto {
     required: false,
   })
   profileImage?: any;
+  
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  businessFile?: any;
+
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  serviceLogo?: any;
+
 }

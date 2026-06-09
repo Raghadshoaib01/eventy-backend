@@ -211,6 +211,9 @@ model Service {
   longitude    Float?
   locationName String?
 
+  businessFile String?
+  serviceLogo  String?
+
   approvalStatus ServiceStatus @default(PENDING_APPROVAL)
   isCompleted Boolean @default(false)
 

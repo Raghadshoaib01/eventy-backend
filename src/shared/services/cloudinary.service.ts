@@ -9,7 +9,8 @@ export type UploadFolder =
   | 'eventy/sub-services'
   | 'eventy/halls'
   | 'eventy/documents'
-  | 'eventy/videos';
+  | 'eventy/videos'
+  | 'eventy/business-files';
 
 /**
  * 🔴 النوع المحلي فقط للرفع

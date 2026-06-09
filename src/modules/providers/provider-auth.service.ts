@@ -39,6 +39,8 @@ export class ProviderAuthService {
   async registerProvider(
     dto: RegisterProviderDto,
     profileImage?: Express.Multer.File,
+    serviceLogo?: Express.Multer.File,
+    businessFile?: Express.Multer.File,
   ) {
     // 1. التحقق من عدم تكرار الإيميل
     const existing = await this.prisma.user.findUnique({
@@ -55,6 +57,28 @@ export class ProviderAuthService {
         folder: 'eventy/profiles',
       });
       profileImageUrl = uploaded.url;
+    }
+
+    // 2. رفع اللوغو إن وُجد
+    let serviceLogoUrl: string | null = null;
+    if (serviceLogo) {
+      const uploaded = await this.cloudinaryService.upload(serviceLogo, {
+        folder: 'eventy/services',
+      });
+      serviceLogoUrl = uploaded.url;
+    }
+
+    //رفع ملف العمل إن وُجد
+    let businessFileUrl: string | null = null;
+    if (businessFile) {
+      const uploaded = await this.cloudinaryService.upload(
+        businessFile,
+        {
+          folder: 'eventy/business-files',
+        },
+      );
+
+      businessFileUrl = uploaded.url;
     }
 
     // 3. Hash الباسورد
@@ -100,6 +124,9 @@ export class ProviderAuthService {
                 description: dto.description,
                 isCompleted: false, // سيتم إكمالها بعد القبول
                 approvalStatus: 'PENDING_DETAILS',
+                serviceLogo: serviceLogoUrl,
+                businessFile: serviceLogoUrl,
+
 
                 // For HALL/SOUND: نحفظ القيم الأولية
                 minCapacity: isHallOrSound ? dto.minCapacity : null,

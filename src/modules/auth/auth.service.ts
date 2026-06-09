@@ -86,12 +86,11 @@ export class AuthService {
 
     // 4. إرسال OTP
     const otpCode = await this.otpService.sendOtp(dto.email);
-    const isDev = process.env.NODE_ENV !== 'production';
 
     return {
       message:
         'Registration successful. Please verify your email with the OTP sent.',
-      data: { email: dto.email, ...(isDev && { otpCode }) },
+      data: { email: dto.email,otpCode},
     };
   }
 
@@ -137,9 +136,14 @@ this.domainEventBus.userVerified({
     await this.otpService.deleteOtp(dto.email);
 
     // 3. إرسال كود جديد
-    await this.otpService.sendOtp(dto.email);
+      const otpCode = await this.otpService.sendOtp(dto.email);
 
-    return { message: 'OTP resent successfully', data: null };
+    return { message: 'OTP resent successfully',
+    data: {
+          email: dto.email,
+          otpCode,
+        },  
+           };
   }
 
   // ============ LOGIN ============

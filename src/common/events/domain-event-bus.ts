@@ -14,6 +14,7 @@ import {
   BookingCancelledPayload,
   ProviderApprovedPayload,
   ProviderRejectedPayload,
+  ProviderRegisteredPayload,
   ServiceApprovedPayload,
   ServiceRejectedPayload,
   PaymentConfirmedPayload,
@@ -75,6 +76,10 @@ export class DomainEventBus {
 
   providerRejected(payload: ProviderRejectedPayload): void {
     this.emitter.emit(DomainEvents.PROVIDER_REJECTED, payload);
+  }
+
+  providerRegistered(payload: ProviderRegisteredPayload): void {
+    this.emitter.emit(DomainEvents.PROVIDER_REGISTERED, payload);
   }
 
   // ── Service ───────────────────────────────────────────────

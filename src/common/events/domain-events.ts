@@ -20,6 +20,7 @@ export const DomainEvents = {
   // Provider
   PROVIDER_APPROVED: 'provider.approved',
   PROVIDER_REJECTED: 'provider.rejected',
+  PROVIDER_REGISTERED: 'provider.registered',
 
   // Service
   SERVICE_APPROVED: 'service.approved',
@@ -99,6 +100,12 @@ export interface ProviderApprovedPayload extends BaseDomainEventPayload {
 }
 
 export interface ProviderRejectedPayload extends BaseDomainEventPayload {
+  providerId: string;
+  businessName: string;
+  adminMessage?: string;
+}
+
+export interface ProviderRegisteredPayload extends BaseDomainEventPayload {
   providerId: string;
   businessName: string;
   adminMessage?: string;

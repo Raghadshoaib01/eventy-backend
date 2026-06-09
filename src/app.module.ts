@@ -28,6 +28,7 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { ActionTrackingInterceptor } from './common/interceptors/action-tracking.interceptor';
 import redisConfig from './config/redis.config';
 import { DomainEventBus } from './common/events/domain-event-bus';
+import { EventModule } from './modules/event/event.module';
 
 
 @Module({
@@ -79,6 +80,7 @@ import { DomainEventBus } from './common/events/domain-event-bus';
     NotificationsModule,
     BookingsModule,
     AdminModule,
+    EventModule,
   ],
   controllers: [
     AppController,

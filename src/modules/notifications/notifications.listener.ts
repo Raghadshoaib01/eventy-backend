@@ -13,6 +13,7 @@ import {
   PaymentConfirmedPayload,
   ProviderApprovedPayload,
   ProviderRejectedPayload,
+  ProviderRegisteredPayload,
   ServiceApprovedPayload,
   ServiceRejectedPayload,
   UserBlockedPayload,
@@ -177,6 +178,19 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your provider application for "${payload.businessName}" was rejected. Reason: ${payload.adminMessage}`
         : `Your provider application for "${payload.businessName}" was rejected.`,
+      metadata: { providerId: payload.providerId, adminMessage: payload.adminMessage },
+    });
+  }
+
+  @OnEvent(DomainEvents.PROVIDER_REGISTERED, { async: true })
+  async handleProviderRegistered(payload: ProviderRegisteredPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PROVIDER_REGISTERED,
+      title: 'Provider Application Registered',
+      body: payload.adminMessage
+        ? `Your provider application for "${payload.businessName}" was registered. Reason: ${payload.adminMessage}`
+        : `Your provider application for "${payload.businessName}" was registered.`,
       metadata: { providerId: payload.providerId, adminMessage: payload.adminMessage },
     });
   }

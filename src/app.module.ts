@@ -29,6 +29,7 @@ import { ActionTrackingInterceptor } from './common/interceptors/action-tracking
 import redisConfig from './config/redis.config';
 import { DomainEventBus } from './common/events/domain-event-bus';
 import { EventModule } from './modules/event/event.module';
+import { AdminUseresService } from './modules/admin/admin-useres.service';
 
 
 @Module({
@@ -103,6 +104,7 @@ import { EventModule } from './modules/event/event.module';
       provide: APP_INTERCEPTOR,
       useClass: ActionTrackingInterceptor,
     },
+    AdminUseresService,
   ],
 })
 export class AppModule {}

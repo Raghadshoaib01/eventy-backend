@@ -166,4 +166,16 @@ export class ProviderProfileController {
       isOpen,
     );
   }
+
+    @Get('dashboard')
+    @ApiOperation({
+      summary: 'Get provider dashboard summary',
+    })
+    @ApiResponse({
+      status: 200,
+      description: 'Provider dashboard summary retrieved successfully',
+    })
+    getProviderDashboardSummary() {
+      return this.providerProfileService.getProviderDashboardSummary();
+    }
 }

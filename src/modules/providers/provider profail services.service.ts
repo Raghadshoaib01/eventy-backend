@@ -349,6 +349,14 @@ async updateBankAccount(
       data: null,
     };
   }
+    
+  async getProviderDashboardSummary() {
+    // يرجع: إجمالي الحجوزات، الحجوزات المعلقة، التقييم، الإيرادات الشهرية
+
+    return {
+      message: 'Get provider dashboard summary is not implemented yet',
+    };
+  }
 
   /**
    * تبديل حالة Service (close/open for today)

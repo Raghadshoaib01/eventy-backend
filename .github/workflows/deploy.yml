@@ -27,7 +27,6 @@ jobs:
             git pull origin main_eventy_prod
             npm install
             npx prisma generate
-            npx prisma migrate resolve --applied 20260513135749_add_notification_infrastructure
             npx prisma migrate deploy
             npm run build
             pm2 restart eventy-backend --update-env

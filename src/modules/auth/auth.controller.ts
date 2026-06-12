@@ -36,7 +36,7 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 
-@ApiTags('Auth')
+@ApiTags('1-Auth')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}

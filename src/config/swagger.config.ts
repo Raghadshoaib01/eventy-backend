@@ -11,7 +11,7 @@ export function setupSwagger(app: INestApplication): void {
         `Use the **Authorize** button and enter: \`Bearer <your-jwt-token>\``,
     )
     .setVersion('1.0')
-    .addTag('Auth', 'Authentication endpoints')
+    .addTag('1-Auth', 'Authentication endpoints')
     .addTag('Users', 'User management endpoints')
     .addTag('Upload', 'File upload endpoints')
     .addTag('Provider Auth', 'Provider profile endpoints')

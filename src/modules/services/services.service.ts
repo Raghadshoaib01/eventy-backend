@@ -3,10 +3,12 @@ import {
   NotFoundException,
   ForbiddenException,
   BadRequestException,
+  ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
+import { CreateServiceTypeDto } from './dto/create-service-type.dto';
 
 @Injectable()
 export class ServicesService {
@@ -299,4 +301,90 @@ export class ServicesService {
       data: null,
     };
   }
+
+  // ========================
+  //  Available Services
+  // ========================
+  async getAvailableServicesByType(
+    type: string,
+    date?: string,
+  ) {
+    // TODO: Get available services filtered by service type and availability date
+    return {
+      message: 'Get available services by type is not implemented yet',
+    };
+  }
+  
+  // ========================
+  //  Services types CRUD
+  // ========================
+// ── الدالة الأولى ──────────────────────────────────────
+async getAllServiceTypes() {
+  const types = await this.prisma.serviceType.findMany({
+    orderBy: { name: 'asc' },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      _count: { select: { services: true } },
+    },
+  });
+
+  return {
+    message: 'Service types retrieved successfully',
+    data: types,
+  };
+}
+
+// ── الدالة الثانية ─────────────────────────────────────
+async createServiceType(dto: CreateServiceTypeDto) {
+  const existing = await this.prisma.serviceType.findUnique({
+    where: { name: dto.name.toUpperCase() },
+  });
+
+  if (existing) {
+    throw new ConflictException(
+      `Service type '${dto.name}' already exists`,
+    );
+  }
+
+  const type = await this.prisma.serviceType.create({
+    data: {
+      name: dto.name.toUpperCase(),
+      description: dto.description,
+    },
+  });
+
+  return {
+    message: 'Service type created successfully',
+    data: type,
+  };
+}
+
+// ── الدالة الثالثة ─────────────────────────────────────
+async deleteServiceType(typeId: string) {
+  const type = await this.prisma.serviceType.findUnique({
+    where: { id: typeId },
+    include: {
+      _count: { select: { services: true } },
+    },
+  });
+
+  if (!type) {
+    throw new NotFoundException('Service type not found');
+  }
+
+  if (type._count.services > 0) {
+    throw new BadRequestException(
+      `Cannot delete '${type.name}' — it is used by ${type._count.services} service(s)`,
+    );
+  }
+
+  await this.prisma.serviceType.delete({ where: { id: typeId } });
+
+  return {
+    message: 'Service type deleted successfully',
+    data: null,
+  };
+}
 }

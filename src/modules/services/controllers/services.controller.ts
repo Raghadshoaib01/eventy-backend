@@ -8,6 +8,8 @@ import {
   Param,
   UseGuards,
   Request,
+  Query,
+  HttpCode, HttpStatus,
 } from '@nestjs/common';
 
 import {
@@ -22,6 +24,11 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { ServicesService } from '../services.service';
 import { CreateServiceDto } from '../dto/create-service.dto';
 import { UpdateServiceDto } from '../dto/update-service.dto';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Public } from 'src/common/decorators/public.decorator';
+import { CreateServiceTypeDto } from '../dto/create-service-type.dto';
 
 @ApiTags('Services')
 @ApiBearerAuth('JWT-auth')
@@ -30,6 +37,46 @@ import { UpdateServiceDto } from '../dto/update-service.dto';
 export class ServicesController {
   constructor(private readonly servicesService: ServicesService) {}
 
+  // ════════════════════════════════
+  // GET /services/service-types
+  // ════════════════════════════════
+  @Get('service-types')
+  @Public()
+  @ApiOperation({ summary: 'Get all service types (public — no auth required)' })
+  @ApiResponse({ status: 200, description: 'Service types retrieved successfully' })
+  getAllServiceTypes() {
+    return this.servicesService.getAllServiceTypes();
+  }
+
+  // ════════════════════════════════
+  // POST /services/service-types
+  // ════════════════════════════════
+  @Post('service-types')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Create new service type (Admin only)' })
+  @ApiResponse({ status: 201, description: 'Service type created successfully' })
+  @ApiResponse({ status: 409, description: 'Service type already exists' })
+  createServiceType(@Body() dto: CreateServiceTypeDto) {
+    return this.servicesService.createServiceType(dto);
+  }
+
+  // ════════════════════════════════
+  // DELETE /services/service-types/:typeId
+  // ════════════════════════════════
+  @Delete('service-types/:typeId')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Delete service type (Admin only)' })
+  @ApiParam({ name: 'typeId', description: 'Service type ID' })
+  @ApiResponse({ status: 200, description: 'Service type deleted successfully' })
+  @ApiResponse({ status: 400, description: 'Service type is in use by existing services' })
+  @ApiResponse({ status: 404, description: 'Service type not found' })
+  deleteServiceType(@Param('typeId') typeId: string) {
+    return this.servicesService.deleteServiceType(typeId);
+  }
+  
   // ========================
   // ➕ Create Service
   // ========================
@@ -90,4 +137,27 @@ export class ServicesController {
   deleteService(@Request() req, @Param('id') serviceId: string) {
     return this.servicesService.deleteService(req.user.sub, serviceId);
   }
+
+  // ========================
+  //  All available Services
+  // ========================
+  @Get('available')
+  @ApiOperation({
+    summary: 'Get available services by type and date',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Available services retrieved successfully',
+  })
+  getAvailableServicesByType(
+    @Query('type') type?: string,
+    @Query('date') date?: string,
+  ) {
+    return this.servicesService.getAvailableServicesByType(
+      type,
+      date,
+    );
+  }
+
+  
 }

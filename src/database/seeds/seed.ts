@@ -1,57 +1,32 @@
-import {
-  PrismaClient,
-  UserRole,
-  AccountStatus,
-  ApprovalStatus,
-} from '@prisma/client';
-import * as bcrypt from 'bcrypt';
+import { PrismaClient } from '@prisma/client';
 
+import { seedAdmin } from './admin.seed';
+import { seedProvider } from './provider.seed';
 const prisma = new PrismaClient();
 
 async function main() {
-  const passwordHash = await bcrypt.hash('Admin@123456', 12);
 
-  const admin = await prisma.user.upsert({
-    where: { email: 'admin@yourdomain.com' },
-    update: {},
-    create: {
-      fullName: 'Super Admin',
-      email: 'admin@yourdomain.com',
-      passwordHash,
-      role: UserRole.ADMIN,
-      status: AccountStatus.ACTIVE,
-      emailVerified: true,
-    },
-  });
+  console.log('\n===== Seed Admin =====');
 
-  console.log('✅ Super Admin created:', admin.email);
-  const serviceTypes = [
-    'FOOD',
-    'PHOTOGRAPHY',
-    'FAVORS',
-    'DECORATION',
-    'HALL',
-    'SOUND',
-  ];
-  for (const name of serviceTypes) {
-    await prisma.serviceType.upsert({
-      where: { name },
-      update: {}, // لا نعدل شيء إذا موجود
-      create: {
-        name,
-        description: `${name} service`,
-      },
-    });
-  }
+  await seedAdmin(prisma);
 
-  console.log('✅ ServiceTypes seeded successfully');
+  console.log('\n===== Seed Provider =====');
+
+  await seedProvider(prisma);
+
+  console.log('\n🎉 All seeds completed');
 }
 
 main()
   .catch((e) => {
+
     console.error(e);
+
     process.exit(1);
+
   })
   .finally(async () => {
+
     await prisma.$disconnect();
+
   });

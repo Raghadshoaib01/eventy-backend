@@ -38,6 +38,8 @@ enum NotificationType {
   LOGIN_ALERT
   ADMIN_NEW_PROVIDER_REQUEST
   BOOKING_CREATED
+  BOOKING_QUOTE_SENT
+  BOOKING_QUOTE_CONFIRMED
   BOOKING_ACCEPTED
   BOOKING_REJECTED
   BOOKING_COMPLETED
@@ -77,6 +79,7 @@ enum AuditAction {
   APPROVE
   REJECT
   BOOKING_CREATE
+  BOOKING_QUOTE
   BOOKING_ACCEPT
   BOOKING_REJECT
   BOOKING_COMPLETE
@@ -126,8 +129,17 @@ enum FileType {
 
 enum BookingStatus {
   PENDING
-  ACCEPTED
+  QUOTE_SENT
+  CONFIRMED
   REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum EventStatus {
+  DRAFT
+  ACTIVE
   IN_PROGRESS
   COMPLETED
   CANCELLED
@@ -176,6 +188,7 @@ model User {
   deviceTokens  DeviceToken[]
   auditLogs     AuditLog[]       @relation("UserAuditLogs")
   bookings      Booking[]
+  events Event[]
 }
 
 model Customer {
@@ -195,6 +208,8 @@ model ServiceProvider {
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   services        Service[]
   bookings        Booking[]
+  blockedSlots BlockedSlot[]
+
 }
 
 // =======================
@@ -233,6 +248,7 @@ model Service {
   availability ServiceAvailability[] 
   workingDays  ServiceWorkingDay[]
   bookings     Booking[]
+  blockedSlots BlockedSlot[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -374,6 +390,9 @@ model Booking {
   timeSlotId String?
   timeSlot   TimeSlot? @relation(fields: [timeSlotId], references: [id], onDelete: SetNull)
 
+  eventId      String?
+  event        Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
   eventName      String
   eventType      EventType
   eventDate      DateTime
@@ -388,12 +407,17 @@ model Booking {
   rejectionReason String?
 
   totalAmount Float @default(0)
+  finalAmount  Float?
 
   status BookingStatus @default(PENDING)
 
   acceptedAt  DateTime?
   completedAt DateTime?
   cancelledAt DateTime?
+
+  cancellationDeadline DateTime?
+  cancelledBy          String?
+  cancellationReason   String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -403,6 +427,7 @@ model Booking {
   @@index([customerId])
   @@index([serviceId])
   @@index([providerId])
+  @@index([eventId])
 }
 
 model BookingItem {
@@ -416,7 +441,10 @@ model BookingItem {
 
   quantity   Int   @default(1)
   unitPrice  Float
+  finalUnitPrice  Float?
+
   totalPrice Float
+  finalTotalPrice Float?
 
   createdAt DateTime @default(now())
 
@@ -490,4 +518,42 @@ model AuditLog {
   @@index([userId])
   @@index([entity])
   @@index([createdAt])
+}
+
+model Event {
+  id             String      @id @default(uuid())
+  customerId     String
+  customer       User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name           String
+  eventType      EventType
+  eventDate      DateTime
+  eventStartTime String
+  eventEndTime   String
+  eventLocation  String?
+  numberOfGuests Int?
+  customerNotes  String?
+  status         EventStatus @default(DRAFT)
+  bookings       Booking[]
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+
+  @@index([customerId])
+}
+
+model BlockedSlot {
+  id         String          @id @default(uuid())
+  serviceId  String
+  service    Service         @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  providerId String
+  provider   ServiceProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  date       DateTime
+  fromTime   String?
+  toTime     String?
+  reason     String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([serviceId])
+  @@index([providerId])
+  @@index([date])
 }

@@ -115,8 +115,8 @@ export class ServicesService {
       include: { provider: true },
     });
 
-    if (!user || !user.provider) {
-      throw new NotFoundException('Provider not found');
+    if (!user) {
+      throw new NotFoundException('User  not found');
     }
 
     const service = await this.prisma.service.findUnique({
@@ -134,9 +134,9 @@ export class ServicesService {
       throw new NotFoundException('Service not found');
     }
 
-    if (service.providerId !== user.provider.id) {
-      throw new ForbiddenException('Access denied');
-    }
+    // if (service.providerId !== user.provider.id) {
+    //   throw new ForbiddenException('Access denied');
+    // } علقته لان الكل بيقدر يشوف الخدمة
 
     return {
       message: 'Service retrieved successfully',

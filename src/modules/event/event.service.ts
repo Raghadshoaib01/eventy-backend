@@ -264,13 +264,13 @@ export class EventService {
     });
 
     if (!event) throw new NotFoundException('Event not found');
-    if (event.customerId !== customerId) {
-      throw new ForbiddenException('Access denied');
-    }
+   
 
     return {
       message: 'Event bookings retrieved successfully',
-      data: event,
+      data:  // if (event.customerId !== customerId) {
+    //   throw new ForbiddenException('Access denied');
+    // }event,
     };
   }
 // ─────────────────────────────────────────────────────────────

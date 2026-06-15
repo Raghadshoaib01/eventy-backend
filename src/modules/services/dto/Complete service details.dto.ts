@@ -101,7 +101,7 @@ export class BankAccountDto {
   accountHolderName: string;
 }
 
-// ✅ DTO for SubService creation with required media
+//  DTO for SubService creation with required media
 export class SubServiceDto{
   @ApiProperty({ example: 'Full Event Package' })
   @IsString()
@@ -234,6 +234,25 @@ subService: SubServiceDto;
 //   @IsNotEmpty({ message: 'At least one media file is required' })
 //  subServiceMedia
 //   ?: any[];
+// src/modules/services/dto/Complete service details.dto.ts
+
+// أضيفي في نهاية CompleteServiceDetailsDto وCompleteHallSoundDetailsDto:
+@ApiPropertyOptional({ example: 'Amman, Jordan' })
+@IsOptional()
+@IsString()
+locationName?: string;
+
+@ApiPropertyOptional({ example: 31.9539 })
+@IsOptional()
+@Type(() => Number)
+@IsNumber()
+latitude?: number;
+
+@ApiPropertyOptional({ example: 35.9106 })
+@IsOptional()
+@Type(() => Number)
+@IsNumber()
+longitude?: number;
  }
 
 // For HALL, SOUND
@@ -297,4 +316,24 @@ export class CompleteHallSoundDetailsDto {
   })
   media
   ?: any[];
+
+  // src/modules/services/dto/Complete service details.dto.ts
+
+// أضيفي في نهاية CompleteServiceDetailsDto وCompleteHallSoundDetailsDto:
+@ApiPropertyOptional({ example: 'Amman, Jordan' })
+@IsOptional()
+@IsString()
+locationName?: string;
+
+@ApiPropertyOptional({ example: 31.9539 })
+@IsOptional()
+@Type(() => Number)
+@IsNumber()
+latitude?: number;
+
+@ApiPropertyOptional({ example: 35.9106 })
+@IsOptional()
+@Type(() => Number)
+@IsNumber()
+longitude?: number;
 }

@@ -349,14 +349,66 @@ async updateBankAccount(
       data: null,
     };
   }
-    
-  async getProviderDashboardSummary() {
-    // يرجع: إجمالي الحجوزات، الحجوزات المعلقة، التقييم، الإيرادات الشهرية
-
-    return {
-      message: 'Get provider dashboard summary is not implemented yet',
-    };
-  }
+  async getProviderDashboardSummary(userId: string) {
+  const provider = await this.prisma.serviceProvider.findFirst({
+    where: { userId },
+    include: {
+      services: { select: { rating: true, totalReviews: true } },
+    },
+  });
+ 
+  if (!provider) throw new NotFoundException('Provider not found');
+ 
+  // Start of current month
+  const startOfMonth = new Date();
+  startOfMonth.setDate(1);
+  startOfMonth.setHours(0, 0, 0, 0);
+ 
+  const [totalBookings, pendingBookings, completedThisMonth] = await Promise.all([
+    this.prisma.booking.count({
+      where: { providerId: provider.id },
+    }),
+    this.prisma.booking.count({
+      where: {
+        providerId: provider.id,
+        status: { in: ['PENDING', 'QUOTE_SENT', 'CONFIRMED'] },
+      },
+    }),
+    this.prisma.booking.findMany({
+      where: {
+        providerId: provider.id,
+        status: 'COMPLETED',
+        completedAt: { gte: startOfMonth },
+      },
+      select: { finalAmount: true, totalAmount: true },
+    }),
+  ]);
+ 
+  // Use finalAmount if set, fall back to totalAmount
+  const monthlyRevenue = completedThisMonth.reduce(
+    (sum, b) => sum + (b.finalAmount ?? b.totalAmount),
+    0,
+  );
+ 
+  // Weighted average rating across all services
+  const totalReviews = provider.services.reduce((s, sv) => s + sv.totalReviews, 0);
+  const avgRating =
+    totalReviews > 0
+      ? provider.services.reduce((s, sv) => s + sv.rating * sv.totalReviews, 0) /
+        totalReviews
+      : 0;
+ 
+  return {
+    message: 'Dashboard summary retrieved successfully',
+    data: {
+      totalBookings,
+      pendingBookings,
+      monthlyRevenue,
+      avgRating: Math.round(avgRating * 10) / 10,
+      totalReviews,
+    },
+  };
+}
 
   /**
    * تبديل حالة Service (close/open for today)

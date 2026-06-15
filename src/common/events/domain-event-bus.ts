@@ -18,6 +18,7 @@ import {
   ServiceApprovedPayload,
   ServiceRejectedPayload,
   PaymentConfirmedPayload,
+  BookingQuoteSentPayload
 } from './domain-events';
 
 /**
@@ -50,6 +51,10 @@ export class DomainEventBus {
 
   bookingCreated(payload: BookingCreatedPayload): void {
     this.emitter.emit(DomainEvents.BOOKING_CREATED, payload);
+  }
+
+  bookingQuoteSent(payload: BookingQuoteSentPayload): void {
+    this.emitter.emit(DomainEvents.BOOKING_QUOTE_SENT, payload);
   }
 
   bookingAccepted(payload: BookingAcceptedPayload): void {

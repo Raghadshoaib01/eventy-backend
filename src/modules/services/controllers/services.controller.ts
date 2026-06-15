@@ -10,6 +10,8 @@ import {
   Request,
   Query,
   HttpCode, HttpStatus,
+  UseInterceptors,
+  UploadedFiles,
 } from '@nestjs/common';
 
 import {
@@ -18,6 +20,7 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
+  ApiConsumes,
 } from '@nestjs/swagger';
 
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
@@ -29,6 +32,9 @@ import { UserRole } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateServiceTypeDto } from '../dto/create-service-type.dto';
+import { AvailableServicesQueryDto } from '../dto/available-services-query.dto';
+import { ServiceDetailQueryDto } from '../dto/service-detail-query.dto';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 
 @ApiTags('Services')
 @ApiBearerAuth('JWT-auth')
@@ -81,22 +87,55 @@ export class ServicesController {
   // ➕ Create Service
   // ========================
   @Post()
+  @UseInterceptors(
+  FileFieldsInterceptor([
+    {
+      name: 'serviceMedia',
+      maxCount: 10,
+    },
+    {
+      name: 'subServiceMedia',
+      maxCount: 10,
+    },
+  ]),
+)
+@ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Create new service (Provider only)' })
   @ApiResponse({ status: 201, description: 'Service created successfully' })
-  createService(@Request() req, @Body() dto: CreateServiceDto) {
-    return this.servicesService.createService(req.user.sub,dto)
-  }
+  async createService(
+  @Request() req,
 
-  // // ========================
-  // // 📋 Get My Services
-  // // ========================
-  // @Get('my')
-  // @ApiOperation({ summary: 'Get all my services (Provider only)' })
-  // @ApiResponse({ status: 200 })
-  // getMyServices(@Request() req) {
-  //   return this.servicesService.getMyServices(req.user.sub);
-  // }
+  @Body()
+  dto: CreateServiceDto,
 
+  @UploadedFiles()
+  files: {
+    serviceMedia?: Express.Multer.File[];
+    subServiceMedia?: Express.Multer.File[];
+  },
+) {
+  return this.servicesService.createService(
+    req.user.sub,
+    dto,
+    files,
+  );
+}
+   // ========================
+  //  All available Services
+  // ========================
+@Get('available')
+@Public()
+@ApiOperation({
+  summary: 'Search available services (public)',
+  description:
+    'All filters optional. budget requires guests. ' +
+    'Returns all active completed services when no filter provided.',
+})
+@ApiResponse({ status: 200, description: 'Available services retrieved' })
+@ApiResponse({ status: 400, description: 'budget provided without guests' })
+getAvailableServicesByType(@Query() dto: AvailableServicesQueryDto) {
+  return this.servicesService.getAvailableServicesByType(dto);
+}
   // ========================
   // 📄 Get Service By ID
   // ========================
@@ -104,8 +143,10 @@ export class ServicesController {
   @ApiOperation({ summary: 'Get service by ID' })
   @ApiParam({ name: 'id', type: String })
   @ApiResponse({ status: 200 })
-  getServiceById(@Request() req, @Param('id') serviceId: string) {
-    return this.servicesService.getServiceById(req.user.sub, serviceId);
+  getServiceById(@Request() req, @Param('id') serviceId: string,
+  @Query() query: ServiceDetailQueryDto,       // ← أضيفي هذا
+) {
+    return this.servicesService.getServiceById(req.user.sub, serviceId , query);
   }
 
   // ========================
@@ -136,27 +177,6 @@ export class ServicesController {
   @ApiResponse({ status: 200 })
   deleteService(@Request() req, @Param('id') serviceId: string) {
     return this.servicesService.deleteService(req.user.sub, serviceId);
-  }
-
-  // ========================
-  //  All available Services
-  // ========================
-  @Get('available')
-  @ApiOperation({
-    summary: 'Get available services by type and date',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Available services retrieved successfully',
-  })
-  getAvailableServicesByType(
-    @Query('type') type?: string,
-    @Query('date') date?: string,
-  ) {
-    return this.servicesService.getAvailableServicesByType(
-      type,
-      date,
-    );
   }
 
   

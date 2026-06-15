@@ -13,6 +13,7 @@ import {
 
 import { AdminUseresService } from './admin-useres.service';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
+import { GetAllBookingsDto } from './dto/get-all-bookings.dto';
 
 @ApiTags('Admin Users')
 @ApiBearerAuth('JWT-auth')
@@ -52,5 +53,19 @@ export class AdminUsersController {
     return this.adminUsersService.getProviderDetails(
       providerId,
     );
+  }
+
+  @Get('bookings')
+  @ApiOperation({
+    summary: 'Get all bookings with filters',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Bookings retrieved successfully',
+  })
+  getAllBookings(
+    @Query() filters: GetAllBookingsDto,
+  ) {
+    return this.adminUsersService.getAllBookings(filters);
   }
 }

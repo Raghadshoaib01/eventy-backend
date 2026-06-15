@@ -104,7 +104,9 @@ async completeServiceDetails(
         minCapacity: dto.minCapacity,
         maxCapacity: dto.maxCapacity,
         isCompleted: true,
-
+        ...(dto.locationName !== undefined && { locationName: dto.locationName }),
+        ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
+        ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
         // ✅ Service media (واحد فقط)
         files: {
           create: {
@@ -276,7 +278,9 @@ async completeServiceDetails(
           maxCapacity: dto.maxCapacity,
           price: dto.price,
           isCompleted: true,
-
+          ...(dto.locationName !== undefined && { locationName: dto.locationName }),
+          ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
+          ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
           files: {
             create: uploadedMedia.map(m => ({
               fileUrl: m.url,

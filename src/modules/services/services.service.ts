@@ -9,15 +9,27 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
 import { UpdateServiceDto } from './dto/update-service.dto';
 import { CreateServiceTypeDto } from './dto/create-service-type.dto';
+import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
+import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
+import { CloudinaryService } from 'src/shared/services/cloudinary.service';
+import { FileType } from '@prisma/client';
 
 @Injectable()
 export class ServicesService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService,
+        private readonly cloudinaryService: CloudinaryService,
+
+  ) {}
 
   // ========================
   // ➕ Create Service
   // ========================
-  async createService(userId: string, dto: CreateServiceDto) {
+  async createService(userId: string, dto: CreateServiceDto,
+     files: {
+    serviceMedia?: Express.Multer.File[];
+    subServiceMedia?: Express.Multer.File[];
+            },
+    ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { provider: true },
@@ -37,35 +49,112 @@ export class ServicesService {
         maxCapacity: dto.maxCapacity,
         price: dto.price,
 
+        ...(dto.locationName !== undefined && { locationName: dto.locationName }),
+        ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
+        ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
         eventTypes: {
           create: dto.eventTypes.map((type) => ({
             eventType: type,
           })),
         },
-
-        availability: {
+         availability: {
+          create: dto.availability.map((day) => ({
+            workFromTime: day.workFromTime,
+            workToTime: day.workToTime,
+            capacity: day.capacity,
+            hasSlots: day.hasSlots ?? false,
+            workingDays: {
+            create: { dayOfWeek: day.dayOfWeek },
+          },
+            timeSlots:
+              day.timeSlots?.length
+                ? {
+                    create: day.timeSlots.map((slot) => ({
+                      fromTime: slot.fromTime,
+                      toTime: slot.toTime,
+                      capacity: slot.capacity,
+                    })),
+                  }
+                : undefined,
+          })),
+        },
+                
+        subServices: {
           create: {
-            workFromTime: dto.workFromTime,
-            workToTime: dto.workToTime,
-            hasSlots: dto.hasSlots ?? false,
+            name: dto.subService.name,
 
-            timeSlots: dto.timeSlots
-              ? {
-                  create: dto.timeSlots,
-                }
-              : undefined,
+            description: dto.subService.description,
+
+            pricePerUnit: dto.subService.pricePerUnit,
+
+            unitType: dto.subService.unitType,
+
+            dailyCapacity: dto.subService.dailyCapacity,
           },
         },
-      },
+         
+              },
       include: {
-        eventTypes: true,
+      serviceType:  { select: { name: true } },
+      eventTypes:   { select: { eventType: true } },
         availability: {
-          include: { timeSlots: true },
+          include: { workingDays: true,timeSlots: true },
         },
         subServices: true,
       },
     });
 
+    for (const file of files.serviceMedia ?? []) {
+
+      const uploaded = await this.cloudinaryService.upload(
+        file,
+        {
+          folder: 'eventy/services',
+        },
+      );
+
+       await this.prisma.serviceDetailFile.create({
+    data: {
+
+      serviceId: service.id,
+
+      fileUrl: uploaded.url,
+
+      publicId: uploaded.publicId,
+
+      fileType: FileType.IMAGE,
+    },
+  });
+}
+
+  const subService = service.subServices[0];
+
+  for (const file of files.subServiceMedia ?? []) {
+
+    const uploaded =
+      await this.cloudinaryService.upload(
+        file,{
+        folder: 'eventy/sub-services',}
+      );
+
+    await this.prisma.subServiceMedia.create({
+
+      data: {
+
+        subServiceId: subService.id,
+
+        url: uploaded.url,
+
+        publicId: uploaded.publicId,
+
+        type: FileType.IMAGE,
+
+      },
+
+    });
+
+  }
+    
     return {
       message: 'Service created successfully and pending approval',
       data: service,
@@ -109,41 +198,119 @@ export class ServicesService {
   // ========================
   // 📄 Get Service By ID
   // ========================
-  async getServiceById(userId: string, serviceId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { provider: true },
-    });
+  // src/modules/services/services.service.ts
+async getServiceById(
+  userId: string,
+  serviceId: string,
+  query: ServiceDetailQueryDto,
+) {
+  const { filesPage = 1, filesLimit = 5, subsPage = 1, subsLimit = 10 } = query;
+  const filesSkip = (filesPage - 1) * filesLimit;
+  const subsSkip  = (subsPage  - 1) * subsLimit;
 
-    if (!user) {
-      throw new NotFoundException('User  not found');
-    }
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: { provider: true },
+  });
+  if (!user) throw new NotFoundException('User not found');
 
-    const service = await this.prisma.service.findUnique({
-      where: { id: serviceId },
-      include: {
-        subServices: true,
-        eventTypes: true,
-        availability: {
-          include: { timeSlots: true },
+  const service = await this.prisma.service.findUnique({
+    where: { id: serviceId },
+    include: {
+      // ✅ اسم النوع
+      serviceType: { select: { name: true } },
+
+      // ✅ أنواع المناسبات
+      eventTypes: { select: { eventType: true } },
+
+      // ✅ الملفات مع pagination
+      files: {
+        skip: filesSkip,
+        take: filesLimit,
+        orderBy: { uploadedAt: 'desc' },
+      },
+
+      // ✅ الإتاحة مع أيام العمل
+      availability: {
+        include: {
+          timeSlots: true,
+          workingDays: { select: { dayOfWeek: true } },
         },
       },
-    });
 
-    if (!service) {
-      throw new NotFoundException('Service not found');
-    }
+      // ✅ الخدمات الفرعية مع pagination
+      subServices: {
+        where: { isAvailable: true },
+        skip: subsSkip,
+        take: subsLimit,
+        include: { media: true },
+        orderBy: { createdAt: 'asc' },
+      },
 
-    // if (service.providerId !== user.provider.id) {
-    //   throw new ForbiddenException('Access denied');
-    // } علقته لان الكل بيقدر يشوف الخدمة
+      provider: {
+        include: {
+          user: {
+            select: {
+              fullName:     true,
+              profileImage: true,
+              phoneNumber:  true,
+              locationName: true,
+            },
+          },
+        },
+      },
+    },
+  });
 
-    return {
-      message: 'Service retrieved successfully',
-      data: service,
-    };
+  if (!service) throw new NotFoundException('Service not found');
+
+  // ── Authorization ──────────────────────────────────────────
+  const isAdmin   = user.role === 'ADMIN';
+  const isOwner   = user.provider?.id === service.providerId;
+  const isPublic  = service.approvalStatus === 'ACTIVE';
+
+  if (!isAdmin && !isOwner && !isPublic) {
+    throw new NotFoundException('Service not found');
   }
 
+  // ── ALL_EVENTS logic ───────────────────────────────────────
+  const hasAllEvents = service.eventTypes.some(
+    (e) => e.eventType === 'ALL_EVENTS',
+  );
+  const eventTypes = hasAllEvents
+    ? [{ eventType: 'ALL_EVENTS' as const }]
+    : service.eventTypes;
+
+  // ── Pagination meta ────────────────────────────────────────
+  const [filesTotal, subsTotal] = await this.prisma.$transaction([
+    this.prisma.serviceDetailFile.count({ where: { serviceId } }),
+    this.prisma.subService.count({ where: { serviceId, isAvailable: true } }),
+  ]);
+
+  const { eventTypes: _et, ...rest } = service;
+
+  return {
+    message: 'Service retrieved successfully',
+    data: {
+      ...rest,
+      eventTypes,
+      meta: {
+        files: {
+          total:      filesTotal,
+          page:       filesPage,
+          limit:      filesLimit,
+          totalPages: Math.ceil(filesTotal / filesLimit),
+        },
+        subServices: {
+          total:      subsTotal,
+          page:       subsPage,
+          limit:      subsLimit,
+          totalPages: Math.ceil(subsTotal / subsLimit),
+        },
+      },
+    },
+  };
+}
   // ========================
   // ✏️ Update Service
   // ========================
@@ -305,16 +472,147 @@ export class ServicesService {
   // ========================
   //  Available Services
   // ========================
-  async getAvailableServicesByType(
-    type: string,
-    date?: string,
-  ) {
-    // TODO: Get available services filtered by service type and availability date
+// src/modules/services/services.service.ts
+  async getAvailableServicesByType(dto: AvailableServicesQueryDto) {
+    const { type, date, guests, budget, page = 1, limit = 10 } = dto;
+    const skip = (page - 1) * limit;
+
+    // ── Validation ──────────────────────────────────────────────
+    if (budget && !guests) {
+      throw new BadRequestException(
+        'guests is required when budget is provided',
+      );
+    }
+
+    // ── Base filters (always applied) ───────────────────────────
+    const isDefaultSearch = !dto.status;
+
+    const where: any = {
+      approvalStatus: dto.status ?? 'ACTIVE',   // ← إذا ما في status → ACTIVE
+    };
+
+    if (isDefaultSearch) {
+      where.isCompleted = true;             // ← فقط عند البحث الافتراضي للزبون
+    }
+    // ── Optional simple filters ──────────────────────────────────
+    if (type) {
+      where.serviceType = { name: type.toUpperCase() };
+    }
+
+    if (date) {
+      const DAY_NAMES = [
+        'SUNDAY','MONDAY','TUESDAY','WEDNESDAY',
+        'THURSDAY','FRIDAY','SATURDAY',
+      ];
+      const dayOfWeek = DAY_NAMES[new Date(date).getDay()];
+      where.availability = {
+        some: { workingDays: { some: { dayOfWeek } } },
+      };
+    }
+
+    // ── AND conditions (OR-based filters that must not conflict) ─
+    const andConditions: any[] = [];
+
+    if (guests) {
+      andConditions.push({
+        OR: [
+          { maxCapacity: null },           // no limit set → always fits
+          { maxCapacity: { gte: guests } },
+        ],
+      });
+    }
+
+    if (budget && guests) {
+      andConditions.push({
+        OR: [
+          // ── Hall / Sound: direct price on the service ──────────
+          {
+            price:       { lte: budget },
+            subServices: { none: {} },
+          },
+
+          // ── ITEM sub-services: pricePerUnit × guests <= budget ─
+          // → equivalent to: pricePerUnit <= budget ÷ guests
+          {
+            subServices: {
+              some: {
+                isAvailable:  true,
+                unitType:     'ITEM',
+                pricePerUnit: { lte: budget / guests },
+              },
+            },
+          },
+
+          // ── SESSION sub-services: flat rate, guests-independent ─
+          {
+            subServices: {
+              some: {
+                isAvailable:  true,
+                unitType:     'SESSION',
+                pricePerUnit: { lte: budget },
+              },
+            },
+          },
+        ],
+      });
+    }
+
+    if (andConditions.length > 0) {
+      where.AND = andConditions;
+    }
+
+    // ── Query ────────────────────────────────────────────────────
+    const [services, total] = await this.prisma.$transaction([
+      this.prisma.service.findMany({
+        where,
+        skip,
+        take:    limit,
+        orderBy: { rating: 'desc' },
+        include: {
+          serviceType: { select: { name: true } },
+          eventTypes:  { select: { eventType: true } },
+          files:       { take: 1 },
+          provider: {
+            include: {
+              user: {
+                select: {
+                  fullName:     true,
+                  profileImage: true,
+                  locationName: true,
+                  phoneNumber:  true,
+                },
+              },
+            },
+          },
+          subServices: {
+            where:   { isAvailable: true },
+            select: {
+              id:           true,
+              name:         true,
+              pricePerUnit: true,
+              unitType:     true,
+              dailyCapacity: true,
+            },
+          },
+          availability: {
+            include: { workingDays: true, timeSlots: true },
+          },
+        },
+      }),
+      this.prisma.service.count({ where }),
+    ]);
+
     return {
-      message: 'Get available services by type is not implemented yet',
+  message:
+    total > 0
+      ? 'Available services retrieved successfully'
+      : 'No available services found matching the given criteria',
+      data: {
+        items: services,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      },
     };
   }
-  
   // ========================
   //  Services types CRUD
   // ========================
@@ -387,4 +685,5 @@ async deleteServiceType(typeId: string) {
     data: null,
   };
 }
+
 }

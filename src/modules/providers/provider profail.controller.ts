@@ -167,15 +167,12 @@ export class ProviderProfileController {
     );
   }
 
-    @Get('dashboard')
-    @ApiOperation({
-      summary: 'Get provider dashboard summary',
-    })
-    @ApiResponse({
-      status: 200,
-      description: 'Provider dashboard summary retrieved successfully',
-    })
-    getProviderDashboardSummary() {
-      return this.providerProfileService.getProviderDashboardSummary();
-    }
+  // ========== Get provider dashboard summary ==========
+@Get('dashboard')
+@ApiOperation({ summary: 'Get provider dashboard summary' })
+@ApiResponse({ status: 200, description: 'Dashboard summary retrieved successfully' })
+getProviderDashboardSummary(@Request() req) {
+  return this.providerProfileService.getProviderDashboardSummary(req.user.sub);
+}
+
 }

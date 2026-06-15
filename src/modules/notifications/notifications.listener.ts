@@ -8,6 +8,7 @@ import {
   BookingCancelledPayload,
   BookingCompletedPayload,
   BookingCreatedPayload,
+  BookingQuoteSentPayload,
   BookingRejectedPayload,
   DomainEvents,
   PaymentConfirmedPayload,
@@ -93,6 +94,20 @@ export class NotificationsListener {
       metadata: {
         bookingId: payload.bookingId,
         serviceName: payload.serviceName,
+        eventDate: payload.eventDate,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.BOOKING_QUOTE_SENT, { async: true })
+  async handleBookingQuoteSent(payload: BookingQuoteSentPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.BOOKING_QUOTE_SENT,
+      title: 'Quote Ready for Review 💰',
+      body: `A new price quote is ready for your "${payload.serviceName}" booking. Please review and confirm.`,
+      metadata: {
+        bookingId: payload.bookingId,
         eventDate: payload.eventDate,
       },
     });

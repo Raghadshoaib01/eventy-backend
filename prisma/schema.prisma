@@ -393,15 +393,6 @@ model Booking {
   eventId      String?
   event        Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
-  eventName      String
-  eventType      EventType
-  eventDate      DateTime
-  eventStartTime String
-  eventEndTime   String
-  eventLocation  String?
-
-  numberOfGuests Int?
-
   customerNotes   String?
   providerNotes   String?
   rejectionReason String?

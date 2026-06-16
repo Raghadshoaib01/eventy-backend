@@ -281,6 +281,12 @@ this.domainEventBus.userVerified({
 
   // confirmReset → تأكيد + باسورد جديد
   async confirmReset(dto: ConfirmResetPasswordDto) {
+    const user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!user || !user.passwordHash) {
+      throw new UnauthorizedException('Invalid credentials');
+    }
     // 1. التحقق من OTP
     await this.otpService.verifyOtp(dto.email, dto.code);
 
@@ -292,8 +298,12 @@ this.domainEventBus.userVerified({
       where: { email: dto.email },
       data: { passwordHash: newHash },
     });
+    const tokens = await this.generateTokens(user.id, user.email, user.role);
 
-    return { message: 'Password reset successfully', data: null };
+
+    return { message: 'Password reset successfully', 
+              data: tokens,
+     };
   }
 
   // refreshToken

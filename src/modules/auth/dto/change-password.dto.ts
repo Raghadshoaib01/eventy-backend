@@ -14,7 +14,7 @@ export class ChangePasswordDto {
   oldPassword: string;
 
   @ApiProperty({ example: '********' })
-  @IsStrongPassword()
+  //@IsStrongPassword()
   @IsString()
   @MinLength(8)
   newPassword: string;

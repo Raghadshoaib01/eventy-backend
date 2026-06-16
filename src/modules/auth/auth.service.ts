@@ -264,7 +264,7 @@ this.domainEventBus.userVerified({
     const user = await this.prisma.user.findUnique({
       where: { email: dto.email },
     });
-    const isDev = process.env.NODE_ENV !== 'production';
+    //const isDev = process.env.NODE_ENV !== 'production';
     let otp: string | null = null;
     // لأسباب أمنية نرجع نفس الرسالة سواء وُجد أم لا
     if (user) {
@@ -272,7 +272,10 @@ this.domainEventBus.userVerified({
     }
     return {
       message: 'If this email exists, you will receive an OTP',
-      data: isDev && otp ? { otpCode: otp } : null,
+      data:{
+          email: dto.email,
+          otp,
+        },  
     };
   }
 

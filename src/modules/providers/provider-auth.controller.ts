@@ -64,31 +64,6 @@ export class ProviderAuthController {
       files?.businessFile?.[0],
   );
   }
-
-  // ========== Provider Login ==========
-  @Post('login')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Provider login' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns tokens + approvalStatus',
-    schema: {
-      example: {
-        success: true,
-        statusCode: 200,
-        message: 'Login successful',
-        data: {
-          accessToken: 'eyJhbGc...',
-          refreshToken: 'eyJhbGc...',
-          approvalStatus: 'PENDING', // or 'APPROVED' or 'REJECTED'
-        },
-      },
-    },
-  })
-  async loginProvider(@Body() dto: LoginDto) {
-    return this.providerAuthService.loginProvider(dto);
-  }
-
   // ========== API #4: Check Approval Status ==========
   @Get('check-approval')
   @UseGuards(JwtAuthGuard)

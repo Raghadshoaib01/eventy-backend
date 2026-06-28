@@ -161,54 +161,6 @@ export class ProviderAuthService {
   }
 
   /**
-   * Provider Login
-   * يُرجع approvalStatus مع التوكنات
-   */
-  async loginProvider(dto: LoginDto) {
-    // 1. البحث عن المستخدم
-    const user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-      include: { provider: true },
-    });
-
-    if (!user || !user.passwordHash || user.role !== UserRole.PROVIDER) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    // 2. التحقق من الباسورد
-    const isValid = await comparePassword(dto.password, user.passwordHash);
-    if (!isValid) {
-      throw new UnauthorizedException('Invalid credentials');
-    }
-
-    // 3. التحقق من تفعيل الحساب
-    if (!user.emailVerified) {
-      throw new UnauthorizedException('Please verify your email first');
-    }
-
-    if (user.status === 'SUSPENDED') {
-      throw new UnauthorizedException('Account is suspended');
-    }
-
-    // 4. تحديث آخر تسجيل دخول
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { lastLoginAt: new Date() },
-    });
-
-    // 5. توليد tokens
-    const tokens = await this.generateTokens(user.id, user.email, user.role);
-
-    return {
-      message: 'Login successful',
-      data: {
-        ...tokens,
-        approvalStatus: user.provider?.approvalStatus || 'PENDING',
-      },
-    };
-  }
-
-  /**
    * التحقق من حالة القبول
    */
   async checkApprovalStatus(userId: string) {

@@ -33,7 +33,7 @@ async function main() {
 
   // ── Step 2: Providers + Services ────────────────────────────────────────────
   console.log('\n── [2/6] Seeding Providers & Services ──');
-  await seedProviders(prisma);
+  const providers = await seedProviders(prisma);
 
   // ── Step 3: Customers ────────────────────────────────────────────────────────
   console.log('\n── [3/6] Seeding Customers ──');
@@ -41,11 +41,11 @@ async function main() {
 
   // ── Step 4: Events + Bookings ────────────────────────────────────────────────
   console.log('\n── [4/6] Seeding Events & Bookings ──');
-  await seedEvents(prisma, customers);
+  const events = await seedEvents(prisma, customers);
 
   // ── Step 5: Notifications ────────────────────────────────────────────────────
   console.log('\n── [5/6] Seeding Notifications ──');
-  await seedNotifications(prisma);
+  await seedNotifications(prisma, { events, providers });
 
   // ── Step 6: Blocked Slots ────────────────────────────────────────────────────
   console.log('\n── [6/6] Seeding Blocked Slots ──');

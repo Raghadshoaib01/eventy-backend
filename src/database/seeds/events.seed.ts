@@ -24,6 +24,7 @@ import {
   PrismaClient,
 } from '@prisma/client';
 import { SeededCustomer } from './customers.seed';
+import { SeededEventsContext } from './seed-context.types';
 
 // ─── Shared transaction-client type ──────────────────────────────────────────
 // Prisma's transaction client exposes the same model delegates as PrismaClient
@@ -164,13 +165,19 @@ async function addBookingItems(
 export async function seedEvents(
   prisma: PrismaClient,
   customers: SeededCustomer[],
-): Promise<void> {
+): Promise<SeededEventsContext> {
   const ahmad = customers.find((c) => c.email === 'ahmad@customer.eventy.com');
   const dina = customers.find((c) => c.email === 'dina@customer.eventy.com');
 
   if (!ahmad || !dina) {
     throw new Error('Expected customers not found. Run customer seed first.');
   }
+
+  let ahmadWeddingHall = '';
+  let dinaEngagementHall = '';
+  let dinaEngagementDecoration = '';
+  let ahmadBirthdayFood = '';
+  let ahmadBirthdayPhoto = '';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // EVENT 1: Al-Rashid Wedding  —  HALL booking only
@@ -202,7 +209,7 @@ export async function seedEvents(
         },
       }));
 
-    const b1 = await upsertBooking(tx, {
+    ahmadWeddingHall = await upsertBooking(tx, {
       customerId: ahmad.userId,
       providerId: hallRoyal.provider.id,
       serviceId: hallRoyal.service.id,
@@ -213,7 +220,7 @@ export async function seedEvents(
       status: BookingStatus.CONFIRMED,
       acceptedAt: new Date('2026-07-01'),
     });
-    console.log('    ✅ Booking [HALL]:', b1);
+    console.log('    ✅ Booking [HALL]:', ahmadWeddingHall);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -247,7 +254,7 @@ export async function seedEvents(
         },
       }));
 
-    const b2a = await upsertBooking(tx, {
+    dinaEngagementHall = await upsertBooking(tx, {
       customerId: dina.userId,
       providerId: hallGarden.provider.id,
       serviceId: hallGarden.service.id,
@@ -258,9 +265,9 @@ export async function seedEvents(
       status: BookingStatus.CONFIRMED,
       acceptedAt: new Date('2026-07-05'),
     });
-    console.log('    ✅ Booking [HALL - Garden Palace]:', b2a);
+    console.log('    ✅ Booking [HALL - Garden Palace]:', dinaEngagementHall);
 
-    const b2b = await upsertBooking(tx, {
+    dinaEngagementDecoration = await upsertBooking(tx, {
       customerId: dina.userId,
       providerId: decGrande.provider.id,
       serviceId: decGrande.service.id,
@@ -269,11 +276,11 @@ export async function seedEvents(
       totalAmount: 350.0 + 40.0 * 12,
       status: BookingStatus.QUOTE_SENT,
     });
-    await addBookingItems(tx, b2b, decGrande.service.id, [
+    await addBookingItems(tx, dinaEngagementDecoration, decGrande.service.id, [
       { subServiceName: 'Floral Backdrop Wall', quantity: 1 },
       { subServiceName: 'Centrepiece (Per Table)', quantity: 12 },
     ]);
-    console.log('    ✅ Booking [DECORATION] with items:', b2b);
+    console.log('    ✅ Booking [DECORATION] with items:', dinaEngagementDecoration);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -308,7 +315,7 @@ export async function seedEvents(
         },
       }));
 
-    const b3a = await upsertBooking(tx, {
+    ahmadBirthdayFood = await upsertBooking(tx, {
       customerId: ahmad.userId,
       providerId: foodNabaah.provider.id,
       serviceId: foodNabaah.service.id,
@@ -319,13 +326,13 @@ export async function seedEvents(
       status: BookingStatus.CONFIRMED,
       acceptedAt: new Date('2026-08-01'),
     });
-    await addBookingItems(tx, b3a, foodNabaah.service.id, [
+    await addBookingItems(tx, ahmadBirthdayFood, foodNabaah.service.id, [
       { subServiceName: 'Deluxe Cassita Platter', quantity: 60 },
       { subServiceName: 'Fresh Berry Juice', quantity: 60 },
     ]);
-    console.log('    ✅ Booking [FOOD] with items:', b3a);
+    console.log('    ✅ Booking [FOOD] with items:', ahmadBirthdayFood);
 
-    const b3b = await upsertBooking(tx, {
+    ahmadBirthdayPhoto = await upsertBooking(tx, {
       customerId: ahmad.userId,
       providerId: photoLens.provider.id,
       serviceId: photoLens.service.id,
@@ -335,11 +342,11 @@ export async function seedEvents(
       totalAmount: 250.0 + 120.0,
       status: BookingStatus.PENDING,
     });
-    await addBookingItems(tx, b3b, photoLens.service.id, [
+    await addBookingItems(tx, ahmadBirthdayPhoto, photoLens.service.id, [
       { subServiceName: 'Photo Session (4 Hours)', quantity: 1 },
       { subServiceName: 'Photo Album (Premium)', quantity: 1 },
     ]);
-    console.log('    ✅ Booking [PHOTOGRAPHY] with items:', b3b);
+    console.log('    ✅ Booking [PHOTOGRAPHY] with items:', ahmadBirthdayPhoto);
   });
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -433,4 +440,14 @@ export async function seedEvents(
   });
 
   console.log('\n✅ All events and bookings seeded.');
+
+  return {
+    bookingIds: {
+      ahmadWeddingHall,
+      dinaEngagementHall,
+      dinaEngagementDecoration,
+      ahmadBirthdayFood,
+      ahmadBirthdayPhoto,
+    },
+  };
 }

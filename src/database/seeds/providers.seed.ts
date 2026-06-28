@@ -24,6 +24,9 @@ import {
   WEEKDAYS,
   WEEKEND_DAYS,
 } from './helpers.seed';
+import {
+  SeededProvidersContext,
+} from './seed-context.types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -790,8 +793,9 @@ const PROVIDERS: ProviderDef[] = [
 
 // ─── Seeder function ──────────────────────────────────────────────────────────
 
-export async function seedProviders(prisma: PrismaClient): Promise<void> {
+export async function seedProviders(prisma: PrismaClient): Promise<SeededProvidersContext> {
   const passwordHash = await getSeedPasswordHash();
+  const refs: Partial<SeededProvidersContext> = {};
 
   for (const def of PROVIDERS) {
     // ── User & ServiceProvider ────────────────────────────────────────────────
@@ -830,6 +834,22 @@ export async function seedProviders(prisma: PrismaClient): Promise<void> {
       where: { userId: user.id },
     });
     if (!provider) throw new Error(`ServiceProvider missing for user ${user.email}`);
+
+    if (def.email === 'khalid@royalevents.jo') {
+      refs.khalidRoyalEvents = {
+        providerId: provider.id,
+        providerUserId: user.id,
+        businessName: provider.businessName,
+      };
+    }
+
+    if (def.email === 'faris@beatmaster.jo') {
+      refs.beatmasterAudio = {
+        providerId: provider.id,
+        providerUserId: user.id,
+        businessName: provider.businessName,
+      };
+    }
 
     // ── BankAccount ───────────────────────────────────────────────────────────
     const existingBank = await prisma.bankAccount.findUnique({ where: { userId: user.id } });
@@ -879,6 +899,16 @@ export async function seedProviders(prisma: PrismaClient): Promise<void> {
         console.log(`    ⚠️  Service [${svcDef.typeName}] already exists:`, service.id);
       }
 
+      if (def.email === 'anas@nabaah.com' && svcDef.typeName === 'FOOD') {
+        refs.anasFoodService = {
+          providerId: provider.id,
+          providerUserId: user.id,
+          businessName: provider.businessName,
+          serviceId: service.id,
+          serviceType: serviceType.name,
+        };
+      }
+
       // ── Availability ────────────────────────────────────────────────────────
       for (const avail of svcDef.availability) {
         await createAvailability(prisma, service.id, avail);
@@ -910,4 +940,14 @@ export async function seedProviders(prisma: PrismaClient): Promise<void> {
   }
 
   console.log('\n✅ All providers seeded.');
+
+  if (!refs.khalidRoyalEvents || !refs.anasFoodService || !refs.beatmasterAudio) {
+    throw new Error('Notification seed provider references were not fully resolved.');
+  }
+
+  return {
+    khalidRoyalEvents: refs.khalidRoyalEvents,
+    anasFoodService: refs.anasFoodService,
+    beatmasterAudio: refs.beatmasterAudio,
+  };
 }

@@ -12,6 +12,7 @@ import {
   Body,
   Query,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -46,10 +47,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Get paginated list of notifications for current user' })
   @ApiResponse({ status: 200, description: 'Notifications retrieved successfully' })
   getUserNotifications(
-    @CurrentUser('sub') userId: string,
+    @Req() req,
     @Query() pagination: PaginationDto,
   ) {
-    return this.notificationsService.getUserNotifications(userId, pagination);
+    return this.notificationsService.getUserNotifications(req.user?.sub, pagination);
   }
 
   @Get('unread-count')
@@ -66,18 +67,18 @@ export class NotificationsController {
   @ApiResponse({ status: 200, description: 'Notification marked as read' })
   @ApiResponse({ status: 404, description: 'Notification not found' })
   markAsRead(
-    @CurrentUser('sub') userId: string,
+    @Req() req,
     @Param('id') notificationId: string,
   ) {
-    return this.notificationsService.markAsRead(userId, notificationId);
+    return this.notificationsService.markAsRead(req.user?.sub, notificationId);
   }
 
   @Patch('read-all')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Mark all notifications as read for current user' })
   @ApiResponse({ status: 200, description: 'All notifications marked as read' })
-  markAllAsRead(@CurrentUser('sub') userId: string) {
-    return this.notificationsService.markAllAsRead(userId);
+  markAllAsRead(@Req() req) {
+    return this.notificationsService.markAllAsRead(req.user?.sub);
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -89,10 +90,10 @@ export class NotificationsController {
   @ApiOperation({ summary: 'Register a device token for push notifications' })
   @ApiResponse({ status: 201, description: 'Device token saved successfully' })
   async saveDeviceToken(
-    @CurrentUser('sub') userId: string,
+    @Req() req,
     @Body() dto: SaveDeviceTokenDto,
   ) {
-    await this.deviceTokenService.saveToken(userId, dto);
+    await this.deviceTokenService.saveToken(req.user?.sub, dto);
     return { message: 'Device token registered successfully', data: null };
   }
 
@@ -102,10 +103,10 @@ export class NotificationsController {
   @ApiParam({ name: 'token', description: 'The device token to remove' })
   @ApiResponse({ status: 200, description: 'Device token removed successfully' })
   async removeDeviceToken(
-    @CurrentUser('sub') userId: string,
+    @Req() req,
     @Param('token') token: string,
   ) {
-    await this.deviceTokenService.removeToken(userId, token);
+    await this.deviceTokenService.removeToken(req.user?.sub, token);
     return { message: 'Device token removed successfully', data: null };
   }
 
@@ -119,21 +120,21 @@ export class NotificationsController {
   }
   ////////////////////////test notification 
   // src/modules/notifications/notifications.controller.ts
-// أضف في نهاية الـ controller
+  // أضف في نهاية الـ controller
 
-@Post('test')
-@HttpCode(HttpStatus.OK)
-@ApiOperation({ summary: 'Test push notification for current user (dev only)' })
-@ApiResponse({ status: 200, description: 'Test notification sent' })
-async testNotification(@CurrentUser('sub') userId: string) {
-  await this.notificationsService.createAndDeliver({
-    userId,
-    type: NotificationType.GENERAL,
-    title: 'Test Notification 🔔',
-    body: 'If you see this on your device, push is working!',
-    metadata: { source: 'manual-test' },
-  });
+  @Post('test')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Test push notification for current user (dev only)' })
+  @ApiResponse({ status: 200, description: 'Test notification sent' })
+  async testNotification(@CurrentUser('sub') userId: string) {
+    await this.notificationsService.createAndDeliver({
+      userId,
+      type: NotificationType.GENERAL,
+      title: 'Test Notification 🔔',
+      body: 'If you see this on your device, push is working!',
+      metadata: { screen: 'profile', targetUserId: userId, source: 'manual-test' },
+    });
 
-  return { message: 'Test notification triggered', data: null };
-}
+    return { message: 'Test notification triggered', data: null };
+  }
 }

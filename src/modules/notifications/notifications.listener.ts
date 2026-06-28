@@ -52,7 +52,11 @@ export class NotificationsListener {
       type: NotificationType.ACCOUNT_VERIFIED,
       title: 'Account Verified ✅',
       body: 'Your email has been verified. Welcome to Eventy!',
-      metadata: { email: payload.email },
+      metadata: {
+        screen: 'profile',
+        targetUserId: payload.targetUserId,
+        email: payload.email,
+      },
     });
   }
 
@@ -65,7 +69,11 @@ export class NotificationsListener {
       body: payload.reason
         ? `Your account has been suspended. Reason: ${payload.reason}`
         : 'Your account has been suspended. Please contact support.',
-      metadata: { reason: payload.reason },
+      metadata: {
+        screen: 'security',
+        targetUserId: payload.targetUserId,
+        reason: payload.reason,
+      },
     });
   }
 
@@ -76,6 +84,10 @@ export class NotificationsListener {
       type: NotificationType.ACCOUNT_UNBLOCKED,
       title: 'Account Reactivated ✅',
       body: 'Your account has been reactivated. You can now use Eventy again.',
+      metadata: {
+        screen: 'profile',
+        targetUserId: payload.targetUserId,
+      },
     });
   }
 
@@ -92,9 +104,12 @@ export class NotificationsListener {
       title: 'New Booking Request 📋',
       body: `You have a new booking request for "${payload.serviceName}".`,
       metadata: {
+        screen: 'booking-details',
         bookingId: payload.bookingId,
-        serviceName: payload.serviceName,
-        eventDate: payload.eventDate,
+        providerUserId: payload.targetUserId,
+        customerUserId: payload.actorId,
+        serviceType: payload.serviceName,
+        eventDate: payload.eventDate.toISOString(),
       },
     });
   }
@@ -107,8 +122,12 @@ export class NotificationsListener {
       title: 'Quote Ready for Review 💰',
       body: `A new price quote is ready for your "${payload.serviceName}" booking. Please review and confirm.`,
       metadata: {
+        screen: 'booking-quote',
         bookingId: payload.bookingId,
-        eventDate: payload.eventDate,
+        customerUserId: payload.targetUserId,
+        providerUserId: payload.actorId,
+        serviceType: payload.serviceName,
+        eventDate: payload.eventDate.toISOString(),
       },
     });
   }
@@ -122,9 +141,12 @@ export class NotificationsListener {
       title: 'Booking Accepted 🎉',
       body: `Your booking for "${payload.serviceName}" has been accepted!`,
       metadata: {
+        screen: 'booking-details',
         bookingId: payload.bookingId,
-        serviceName: payload.serviceName,
-        eventDate: payload.eventDate,
+        providerUserId: payload.targetUserId,
+        customerUserId: payload.actorId,
+        serviceType: payload.serviceName,
+        eventDate: payload.eventDate.toISOString(),
       },
     });
   }
@@ -139,7 +161,11 @@ export class NotificationsListener {
         ? `Your booking for "${payload.serviceName}" was rejected. Reason: ${payload.rejectionReason}`
         : `Your booking for "${payload.serviceName}" was rejected.`,
       metadata: {
+        screen: 'booking-details',
         bookingId: payload.bookingId,
+        providerUserId: payload.targetUserId,
+        customerUserId: payload.actorId,
+        serviceType: payload.serviceName,
         rejectionReason: payload.rejectionReason,
       },
     });
@@ -152,7 +178,12 @@ export class NotificationsListener {
       type: NotificationType.BOOKING_COMPLETED,
       title: 'Booking Completed ✅',
       body: `Your booking for "${payload.serviceName}" has been marked as completed.`,
-      metadata: { bookingId: payload.bookingId },
+      metadata: {
+        screen: 'booking-details',
+        bookingId: payload.bookingId,
+        targetUserId: payload.targetUserId,
+        serviceType: payload.serviceName,
+      },
     });
   }
 
@@ -163,7 +194,12 @@ export class NotificationsListener {
       type: NotificationType.BOOKING_CANCELLED,
       title: 'Booking Cancelled',
       body: `Your booking for "${payload.serviceName}" has been cancelled.`,
-      metadata: { bookingId: payload.bookingId },
+      metadata: {
+        screen: 'booking-details',
+        bookingId: payload.bookingId,
+        targetUserId: payload.targetUserId,
+        serviceType: payload.serviceName,
+      },
     });
   }
 
@@ -180,7 +216,15 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your provider application for "${payload.businessName}" has been approved! Note: ${payload.adminMessage}`
         : `Your provider application for "${payload.businessName}" has been approved!`,
-      metadata: { providerId: payload.providerId, adminMessage: payload.adminMessage },
+      metadata: {
+        screen: 'provider-profile',
+        providerId: payload.providerId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        businessName: payload.businessName,
+        approvalStatus: 'APPROVED',
+        adminMessage: payload.adminMessage,
+      },
     });
   }
 
@@ -193,7 +237,16 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your provider application for "${payload.businessName}" was rejected. Reason: ${payload.adminMessage}`
         : `Your provider application for "${payload.businessName}" was rejected.`,
-      metadata: { providerId: payload.providerId, adminMessage: payload.adminMessage },
+      metadata: {
+        screen: 'provider-profile',
+        providerId: payload.providerId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        businessName: payload.businessName,
+        approvalStatus: 'REJECTED',
+        rejectionReason: payload.adminMessage,
+        adminMessage: payload.adminMessage,
+      },
     });
   }
 
@@ -206,7 +259,14 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your provider application for "${payload.businessName}" was registered. Reason: ${payload.adminMessage}`
         : `Your provider application for "${payload.businessName}" was registered.`,
-      metadata: { providerId: payload.providerId, adminMessage: payload.adminMessage },
+      metadata: {
+        screen: 'provider-review',
+        providerId: payload.providerId,
+        targetUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        businessName: payload.businessName,
+        adminMessage: payload.adminMessage,
+      },
     });
   }
 
@@ -223,7 +283,15 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your service "${payload.serviceName}" has been approved and is now live! Note: ${payload.adminMessage}`
         : `Your service "${payload.serviceName}" has been approved and is now live!`,
-      metadata: { serviceId: payload.serviceId, adminMessage: payload.adminMessage },
+      metadata: {
+        screen: 'service-details',
+        serviceId: payload.serviceId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        serviceType: payload.serviceName,
+        approvalStatus: 'APPROVED',
+        adminMessage: payload.adminMessage,
+      },
     });
   }
 
@@ -236,7 +304,16 @@ export class NotificationsListener {
       body: payload.adminMessage
         ? `Your service "${payload.serviceName}" was rejected. Reason: ${payload.adminMessage}`
         : `Your service "${payload.serviceName}" was rejected. Please review and resubmit.`,
-      metadata: { serviceId: payload.serviceId, adminMessage: payload.adminMessage },
+      metadata: {
+        screen: 'service-details',
+        serviceId: payload.serviceId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        serviceType: payload.serviceName,
+        approvalStatus: 'REJECTED',
+        rejectionReason: payload.adminMessage,
+        adminMessage: payload.adminMessage,
+      },
     });
   }
 
@@ -251,7 +328,12 @@ export class NotificationsListener {
       type: NotificationType.PAYMENT_CONFIRMED,
       title: 'Payment Confirmed 💳',
       body: `Payment of ${payload.amount} has been confirmed for your booking.`,
-      metadata: { bookingId: payload.bookingId, amount: payload.amount },
+      metadata: {
+        screen: 'booking-payment',
+        bookingId: payload.bookingId,
+        customerUserId: payload.targetUserId,
+        amount: payload.amount,
+      },
     });
   }
 

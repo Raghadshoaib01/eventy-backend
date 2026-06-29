@@ -147,6 +147,18 @@ export class ProviderBookingsService {
           );
         }
       }
+              if (dto.items.length !== booking.items.length) {
+            throw new BadRequestException(
+              'A quote price must be provided for every booking item',
+            );
+          }
+          const sentIds = dto.items.map((i) => i.bookingItemId);
+
+        if (new Set(sentIds).size !== sentIds.length) {
+            throw new BadRequestException(
+              'Duplicate booking items are not allowed',
+            );
+          }
     } else {
       if (dto.finalAmount === undefined || dto.finalAmount === null) {
         throw new BadRequestException(

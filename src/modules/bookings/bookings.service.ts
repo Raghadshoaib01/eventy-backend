@@ -109,7 +109,7 @@ export class BookingsService {
     const booking = await this.prisma.booking.findFirst({
       where: { id: bookingId, customerId, status: 'QUOTE_SENT' },
       include: {
-        event: { select: { eventDate: true } },
+        event: { select: { id: true, name: true } },
         service: { include: { serviceType: { select: { name: true } } } },
         provider: { include: { user: { select: { id: true } } } },
       },
@@ -121,17 +121,65 @@ export class BookingsService {
       );
     }
 
-    await this.prisma.booking.update({
-      where: { id: bookingId },
-      data: {
-        status: 'CANCELLED',
-        cancelledAt: new Date(),
-        cancelledBy: 'CUSTOMER',
-        cancellationReason: 'Customer rejected the provider quote',
-      },
+    if (!booking.event) {
+      throw new BadRequestException('Booking is not associated with an event');
+    }
+
+    const terminalStatuses = ['COMPLETED', 'CANCELLED', 'REJECTED'];
+    const pendingStatuses = ['PENDING', 'QUOTE_SENT'];
+
+    // Siblings = every other booking under the same event
+    const siblings = await this.prisma.booking.findMany({
+      where: { eventId: booking.event.id, id: { not: bookingId } },
+      select: { status: true },
     });
 
-    // Notify provider
+    const allSiblingsTerminal = siblings.every((s) =>
+      terminalStatuses.includes(s.status),
+    );
+    const hasPendingSibling = siblings.some((s) =>
+      pendingStatuses.includes(s.status),
+    );
+
+    // All bookings (including this one) terminal → event is fully cancelled.
+    // Any sibling still pending/quote_sent → event stays ACTIVE.
+    // Otherwise remaining siblings are CONFIRMED/IN_PROGRESS → event keeps running.
+    const newEventStatus = allSiblingsTerminal
+      ? 'CANCELLED'
+      : hasPendingSibling
+        ? 'ACTIVE'
+        : 'IN_PROGRESS';
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledBy: 'CUSTOMER',
+          cancellationReason: 'Customer rejected the quote',
+        },
+      });
+      if (newEventStatus === 'IN_PROGRESS') {
+        await tx.booking.updateMany({
+          where: {
+            eventId: booking.event.id,
+            status: 'CONFIRMED',
+          },
+          data: {
+            status: 'IN_PROGRESS',
+            acceptedAt: new Date(),
+          },
+        });
+      }
+
+      await tx.event.update({
+        where: { id: booking.event!.id },
+        data: { status: newEventStatus },
+      });
+    });
+
+    // Notify provider that their quote was rejected
     this.domainEventBus.bookingRejected({
       actorId: customerId,
       targetUserId: booking.provider.user.id,
@@ -141,9 +189,29 @@ export class BookingsService {
       rejectionReason: 'Customer rejected the quote',
     });
 
+    // Notify customer if the whole event was cancelled as a result
+    if (newEventStatus === 'CANCELLED') {
+      this.domainEventBus.eventCancelled({
+        actorId: customerId,
+        targetUserId: customerId,
+        entityId: booking.event.id,
+        eventId: booking.event.id,
+        eventName: booking.event.name,
+        reason: 'all services were rejected or cancelled',
+      });
+    }
+
     return {
-      message: 'Quote rejected — booking cancelled',
-      data: { bookingId, status: 'CANCELLED' },
+      message:
+        newEventStatus === 'CANCELLED'
+          ? 'Quote rejected — booking cancelled and event cancelled (no remaining services)'
+          : 'Quote rejected — booking cancelled',
+      data: {
+        bookingId,
+        bookingStatus: 'CANCELLED',
+        eventId: booking.event.id,
+        eventStatus: newEventStatus,
+      },
     };
   }
 }

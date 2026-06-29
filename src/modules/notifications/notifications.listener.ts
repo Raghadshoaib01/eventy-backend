@@ -11,6 +11,7 @@ import {
   BookingQuoteSentPayload,
   BookingRejectedPayload,
   DomainEvents,
+  EventCancelledPayload,
   PaymentConfirmedPayload,
   ProviderApprovedPayload,
   ProviderRejectedPayload,
@@ -199,6 +200,26 @@ export class NotificationsListener {
         bookingId: payload.bookingId,
         targetUserId: payload.targetUserId,
         serviceType: payload.serviceName,
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // EVENT EVENTS
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.EVENT_CANCELLED, { async: true })
+  async handleEventCancelled(payload: EventCancelledPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.EVENT_CANCELLED,
+      title: 'Event Cancelled',
+      body: `Your event "${payload.eventName}" has been cancelled because ${payload.reason}.`,
+      metadata: {
+        screen: 'event-details',
+        eventId: payload.eventId,
+        customerUserId: payload.targetUserId,
+        reason: payload.reason,
       },
     });
   }

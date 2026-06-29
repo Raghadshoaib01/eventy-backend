@@ -53,15 +53,15 @@ export class EventController {
   // ────────────────────────────────────────────
   @Get(':eventId/bookings')
   @ApiOperation({
-    summary: 'Get all bookings for an event (customer only)',
+    summary: 'Get all bookings for an event',
     description: 'Returns the full event details with every booking, items, and provider info.',
   })
   @ApiParam({ name: 'eventId', description: 'Event UUID' })
   @ApiResponse({ status: 200, description: 'Event bookings retrieved successfully' })
   @ApiResponse({ status: 403, description: 'Access denied — not your event' })
   @ApiResponse({ status: 404, description: 'Event not found' })
-  getEventBookings(@Request() req, @Param('eventId') eventId: string) {
-    return this.eventService.getEventBookings(req.user.sub, eventId);
+  getEventBookings( @Param('eventId') eventId: string) {
+    return this.eventService.getEventBookings(eventId);
   }
 
   @Get()

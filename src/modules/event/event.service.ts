@@ -234,7 +234,7 @@ export class EventService {
   // ─────────────────────────────────────────────────────────────
   // GET /events/:eventId/bookings
   // ─────────────────────────────────────────────────────────────
-  async getEventBookings(customerId: string, eventId: string) {
+  async getEventBookings( eventId: string) {
     const event = await this.prisma.event.findUnique({
       where: { id: eventId },
       include: {

@@ -18,6 +18,9 @@ export const DomainEvents = {
   BOOKING_COMPLETED: 'booking.completed',
   BOOKING_CANCELLED: 'booking.cancelled',
 
+  // Event
+  EVENT_CANCELLED: 'event.cancelled',
+
   // Provider
   PROVIDER_APPROVED: 'provider.approved',
   PROVIDER_REJECTED: 'provider.rejected',
@@ -133,4 +136,10 @@ export interface BookingQuoteSentPayload extends BaseDomainEventPayload {
   bookingId: string;
   serviceName: string;
   eventDate: Date;
+}
+
+export interface EventCancelledPayload extends BaseDomainEventPayload {
+  eventId: string;
+  eventName: string;
+  reason: string;
 }

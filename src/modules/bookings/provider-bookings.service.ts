@@ -167,9 +167,9 @@ export class ProviderBookingsService {
       }
     }
 
+    let finalAmount = 0;
     // Update prices inside a transaction
     await this.prisma.$transaction(async (tx) => {
-      let finalAmount = 0;
 
       if (hasSubServices && dto.items) {
         for (const qi of dto.items) {
@@ -209,14 +209,12 @@ export class ProviderBookingsService {
       eventDate: booking.event!.eventDate,
     });
 
-    const updated = await this.prisma.booking.findUnique({
-      where: { id: bookingId },
-      include: { items: true },
-    });
-
     return {
       message: 'Quote sent to customer successfully',
-      data: updated,
-    };
+ data: {
+    bookingId,
+    status: 'QUOTE_SENT',
+    finalAmount,
+  },    };
   }
 }

@@ -361,8 +361,8 @@ async getServiceById(
         'workFromTime must be earlier than workToTime',
       );
     }
-
-    const updated = await this.prisma.service.update({
+const updated = await this.prisma.$transaction(async (tx) => {
+    const updatedService = await tx.service.update({
       where: { id: serviceId },
       data: {
         description: dto.description,
@@ -416,18 +416,19 @@ async getServiceById(
     if (dto.timeSlots && service.availability.length > 0) {
       const availabilityId = service.availability[0].id;
 
-      await this.prisma.timeSlot.deleteMany({
+      await tx.timeSlot.deleteMany({
         where: { availabilityId },
       });
 
-      await this.prisma.timeSlot.createMany({
+      await tx.timeSlot.createMany({
         data: dto.timeSlots.map((slot) => ({
           ...slot,
           availabilityId,
         })),
       });
     }
-
+return updatedService; // بنرجع النتيجة برات الـ transaction
+  });
     return {
       message: 'Service updated successfully',
       data: updated,

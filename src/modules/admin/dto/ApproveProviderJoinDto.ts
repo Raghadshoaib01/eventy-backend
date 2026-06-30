@@ -1,11 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsNotEmpty, IsOptional, IsString, IsArray, IsUUID } from 'class-validator';
 
-// DTO للموافقة/رفض انضمام مزود خدمة جديد
+// DTO for approving or rejecting a new service provider join request
 export class ApproveProviderJoinDto {
   @ApiProperty({ 
     example: 'uuid-of-provider',
-    description: 'معرف مزود الخدمة'
+    description: 'Service Provider ID'
   })
   @IsUUID()
   @IsNotEmpty()
@@ -13,7 +13,7 @@ export class ApproveProviderJoinDto {
 
   @ApiProperty({ 
     example: 'uuid-of-service',
-    description: 'معرف الخدمة الأولية'
+    description: 'Primary Service ID'
   })
   @IsUUID()
   @IsNotEmpty()
@@ -21,27 +21,27 @@ export class ApproveProviderJoinDto {
 
   @ApiProperty({ 
     example: true,
-    description: 'true للقبول، false للرفض'
+    description: 'true for acceptance, false for rejection'
   })
   @IsBoolean()
   @IsNotEmpty()
   isApproved: boolean;
 
   @ApiProperty({ 
-    example: 'يرجى تحديث معلومات الترخيص',
+    example: 'Please update your license information.',
     required: false,
-    description: 'رسالة إدارية اختيارية (سبب الرفض أو ملاحظات)'
+    description: 'Optional administrative letter (reason for rejection or comments)'
   })
   @IsString()
   @IsOptional()
   adminMessage?: string;
 }
 
-// DTO للموافقة/رفض خدمة جديدة
+// DTO for approving or rejecting a new service
 export class ApproveServiceDto {
   @ApiProperty({ 
     example: 'uuid-of-service',
-    description: 'معرف الخدمة'
+    description: 'Service ID'
   })
   @IsUUID()
   @IsNotEmpty()
@@ -49,7 +49,7 @@ export class ApproveServiceDto {
 
   @ApiProperty({ 
     example: true,
-    description: 'true للقبول، false للرفض'
+    description: 'true for acceptance, false for rejection'
   })
   @IsBoolean()
   @IsNotEmpty()
@@ -58,55 +58,55 @@ export class ApproveServiceDto {
   @ApiProperty({ 
     example: ['uuid-sub1', 'uuid-sub2'],
     required: false,
-    description: 'معرفات الخدمات الفرعية المقبولة'
+    description: 'Accepted sub-service IDs'
   })
   @IsArray()
   @IsUUID('4', { each: true })
   @IsOptional()
   approvedSubServiceIds?: string[];
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: ['uuid-sub3', 'uuid-sub4'],
     required: false,
-    description: 'معرفات الخدمات الفرعية المرفوضة'
+    description: 'Rejected sub-service IDs'
   })
   @IsArray()
   @IsUUID('4', { each: true })
   @IsOptional()
   rejectedSubServiceIds?: string[];
 
-  @ApiProperty({ 
-    example: 'يرجى تحسين جودة الصور',
+  @ApiProperty({
+    example: 'Please improve the image quality.',
     required: false,
-    description: 'رسالة إدارية اختيارية'
+    description: 'Optional administrative message'
   })
   @IsString()
   @IsOptional()
   adminMessage?: string;
 }
 
-// DTO للموافقة/رفض خدمة فرعية جديدة
+// DTO for approving or rejecting a new sub-service
 export class ApproveSubServiceDto {
-  @ApiProperty({ 
+  @ApiProperty({
     example: 'uuid-of-subservice',
-    description: 'معرف الخدمة الفرعية'
+    description: 'Sub-service ID'
   })
   @IsUUID()
   @IsNotEmpty()
   subServiceId: string;
 
-  @ApiProperty({ 
+  @ApiProperty({
     example: true,
-    description: 'true للقبول، false للرفض'
+    description: 'true to approve, false to reject'
   })
   @IsBoolean()
   @IsNotEmpty()
   isApproved: boolean;
 
-  @ApiProperty({ 
-    example: 'السعر غير مناسب',
+  @ApiProperty({
+    example: 'The pricing is not appropriate.',
     required: false,
-    description: 'رسالة إدارية اختيارية'
+    description: 'Optional administrative message'
   })
   @IsString()
   @IsOptional()

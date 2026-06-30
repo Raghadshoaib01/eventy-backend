@@ -38,36 +38,36 @@ export class AdminApprovalController {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 API #1: قبول/رفض طلب انضمام مزود خدمة
+   * 🔹 API #1: Approve/Reject a Service Provider Join Request
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   @Post('provider-join')
   @TrackAction({
   action: AuditAction.APPROVE,
   entity: 'ServiceProvider',
-  audit: true,                               // ✅ حفظ Audit
-  notify: DomainEvents.PROVIDER_APPROVED,    // ✅ إرسال Event
+  audit: true,                               // ✅ Save Audit log
+  notify: DomainEvents.PROVIDER_APPROVED,    // ✅ Emit domain event
   entityIdPath: 'providerId'
 })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'قبول أو رفض طلب انضمام مزود خدمة جديد',
+    summary: 'Approve or reject a new service provider join request',
     description: `
-      يقوم السوبر أدمن بقبول أو رفض طلب انضمام مزود خدمة جديد.
-      
-      في حالة القبول:
-      - تحديث حالة المزود إلى APPROVED
-      - تحديث حالة الخدمة إلى PENDING_DETAILS
-      - إرسال رسالة ترحيب مع طلب إكمال البيانات
-      
-      في حالة الرفض:
-      - تحديث حالة المزود والخدمة إلى REJECTED
-      - إرسال رسالة اعتذار مع السبب (إن وُجد)
+      The admin approves or rejects a new service provider join request.
+
+      On approval:
+      - Provider status is updated to APPROVED
+      - Service status is updated to PENDING_DETAILS
+      - A welcome message is sent requesting the provider to complete their details
+
+      On rejection:
+      - Provider and service statuses are updated to REJECTED
+      - A rejection message is sent with the reason (if provided)
     `,
   })
   @ApiResponse({
     status: 200,
-    description: 'تم معالجة الطلب بنجاح',
+    description: 'Request processed successfully',
     schema: {
       example: {
         success: true,
@@ -86,11 +86,11 @@ export class AdminApprovalController {
   })
   @ApiResponse({
     status: 403,
-    description: 'المستخدم ليس سوبر أدمن',
+    description: 'User is not an admin',
   })
   @ApiResponse({
     status: 404,
-    description: 'مزود الخدمة أو الخدمة غير موجودة',
+    description: 'Service provider or service not found',
   })
   async approveProviderJoin(
     @Request() req,
@@ -102,29 +102,29 @@ export class AdminApprovalController {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 API #2: قبول/رفض خدمة جديدة
+   * 🔹 API #2: Approve/Reject a New Service
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   @Post('service')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'قبول أو رفض خدمة جديدة',
+    summary: 'Approve or reject a new service',
     description: `
-      يقوم السوبر أدمن بقبول أو رفض خدمة جديدة.
-      
-      في حالة القبول:
-      - تحديث حالة الخدمة إلى ACTIVE
-      - قبول أو رفض الخدمات الفرعية المحددة
-      - إرسال رسالة ترحيب بالخدمة المقبولة
-      
-      في حالة الرفض:
-      - تحديث حالة الخدمة وجميع الخدمات الفرعية إلى REJECTED
-      - إرسال رسالة اعتذار مع السبب (إن وُجد)
+      The admin approves or rejects a new service.
+
+      On approval:
+      - Service status is updated to ACTIVE
+      - Specified sub-services are individually approved or rejected
+      - A welcome message is sent for the approved service
+
+      On rejection:
+      - Service status and all sub-services are updated to REJECTED
+      - A rejection message is sent with the reason (if provided)
     `,
   })
   @ApiResponse({
     status: 200,
-    description: 'تم معالجة الطلب بنجاح',
+    description: 'Request processed successfully',
     schema: {
       example: {
         success: true,
@@ -143,11 +143,11 @@ export class AdminApprovalController {
   })
   @ApiResponse({
     status: 403,
-    description: 'المستخدم ليس سوبر أدمن',
+    description: 'User is not an admin',
   })
   @ApiResponse({
     status: 404,
-    description: 'الخدمة غير موجودة',
+    description: 'Service not found',
   })
   async approveService(@Request() req, @Body() dto: ApproveServiceDto) {
     const adminId = req.user.sub;
@@ -156,28 +156,28 @@ export class AdminApprovalController {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 API #3: قبول/رفض خدمة فرعية جديدة
+   * 🔹 API #3: Approve/Reject a New Sub-Service
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   @Post('sub-service')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'قبول أو رفض خدمة فرعية جديدة',
+    summary: 'Approve or reject a new sub-service',
     description: `
-      يقوم السوبر أدمن بقبول أو رفض خدمة فرعية جديدة.
-      
-      في حالة القبول:
-      - تحديث حالة الخدمة الفرعية إلى ACTIVE
-      - إرسال رسالة ترحيب
-      
-      في حالة الرفض:
-      - تحديث حالة الخدمة الفرعية إلى REJECTED
-      - إرسال رسالة اعتذار مع السبب (إن وُجد)
+      The admin approves or rejects a new sub-service.
+
+      On approval:
+      - Sub-service status is updated to ACTIVE
+      - A welcome message is sent to the provider
+
+      On rejection:
+      - Sub-service status is updated to REJECTED
+      - A rejection message is sent with the reason (if provided)
     `,
   })
   @ApiResponse({
     status: 200,
-    description: 'تم معالجة الطلب بنجاح',
+    description: 'Request processed successfully',
     schema: {
       example: {
         success: true,
@@ -194,11 +194,11 @@ export class AdminApprovalController {
   })
   @ApiResponse({
     status: 403,
-    description: 'المستخدم ليس سوبر أدمن',
+    description: 'User is not an admin',
   })
   @ApiResponse({
     status: 404,
-    description: 'الخدمة الفرعية غير موجودة',
+    description: 'Sub-service not found',
   })
   async approveSubService(@Request() req, @Body() dto: ApproveSubServiceDto) {
     const adminId = req.user.sub;

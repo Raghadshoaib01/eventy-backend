@@ -31,12 +31,12 @@ export class AdminApprovalService {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 الدالة الأولى: قبول/رفض طلب انضمام مزود خدمة
+   * 🔹 Function #1: Approve/Reject a Service Provider Join Request
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async approveProviderJoin(adminId: string, dto: ApproveProviderJoinDto) {
 
-    // 2. جلب مزود الخدمة والخدمة
+    // 2. Fetch the service provider and their service
     const provider = await this.prisma.serviceProvider.findUnique({
       where: { id: dto.providerId },
       include: {
@@ -59,18 +59,18 @@ export class AdminApprovalService {
       throw new NotFoundException('Service not found for this provider');
     }
 
-    // 3. التحقق من أن الطلب في حالة PENDING
+    // 3. Verify that the provider is in PENDING status
     if (provider.approvalStatus !== 'PENDING') {
       throw new BadRequestException(
         `Provider status is already ${provider.approvalStatus}`,
       );
     }
 
-    // 4. تنفيذ القبول أو الرفض
+    // 4. Execute approval or rejection
     if (dto.isApproved) {
-      // ✅ القبول
+      // ✅ Approval
       await this.prisma.$transaction(async (tx) => {
-        // تحديث حالة المزود إلى APPROVED
+        // Update provider status to APPROVED
         await tx.serviceProvider.update({
           where: { id: dto.providerId },
           data: {
@@ -78,7 +78,7 @@ export class AdminApprovalService {
           },
         });
 
-        // تحديث حالة الخدمة إلى PENDING_DETAILS
+        // Update service status to PENDING_DETAILS
         await tx.service.update({
           where: { id: dto.serviceId },
           data: {
@@ -86,7 +86,7 @@ export class AdminApprovalService {
           },
         });
 
-        // تحديث حالة المستخدم إلى ACTIVE
+        // Update user status to ACTIVE
         await tx.user.update({
           where: { id: provider.userId },
           data: {
@@ -116,9 +116,9 @@ export class AdminApprovalService {
         },
       };
     } else {
-      // ❌ الرفض
+      // ❌ Rejection
       await this.prisma.$transaction(async (tx) => {
-        // تحديث حالة المزود إلى REJECTED
+        // Update provider status to REJECTED
         await tx.serviceProvider.update({
           where: { id: dto.providerId },
           data: {
@@ -126,7 +126,7 @@ export class AdminApprovalService {
           },
         });
 
-        // تحديث حالة الخدمة إلى REJECTED
+        // Update service status to REJECTED
         await tx.service.update({
           where: { id: dto.serviceId },
           data: {
@@ -134,7 +134,7 @@ export class AdminApprovalService {
           },
         });
 
-        // تحديث حالة المستخدم إلى SUSPENDED
+        // Update user status to SUSPENDED
         await tx.user.update({
           where: { id: provider.userId },
           data: {
@@ -166,13 +166,13 @@ export class AdminApprovalService {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 الدالة الثانية: قبول/رفض خدمة جديدة
+   * 🔹 Function #2: Approve/Reject a New Service
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async approveService(adminId: string, dto: ApproveServiceDto) {
 
 
-    // 2. جلب الخدمة مع الخدمات الفرعية
+    // 2. Fetch the service along with its sub-services
     const service = await this.prisma.service.findUnique({
       where: { id: dto.serviceId },
       include: {
@@ -189,7 +189,7 @@ export class AdminApprovalService {
     if (!service) {
       throw new NotFoundException('Service not found');
     }
-    // 3. التحقق من أن الخدمة في حالة PENDING_DETAILS أو PENDING
+    // 3. Verify that the service is in PENDING_DETAILS or PENDING_APPROVAL status
     if (
       !['PENDING_DETAILS', 'PENDING_APPROVAL'].includes(service.approvalStatus || '')
     ) {
@@ -198,11 +198,11 @@ export class AdminApprovalService {
       );
     }
 
-    // 4. تنفيذ القبول أو الرفض
+    // 4. Execute approval or rejection
     if (dto.isApproved) {
-      // ✅ القبول
+      // ✅ Approval
       await this.prisma.$transaction(async (tx) => {
-        // تحديث حالة الخدمة إلى ACTIVE
+        // Update service status to ACTIVE
         await tx.service.update({
           where: { id: dto.serviceId },
           data: {
@@ -210,10 +210,10 @@ export class AdminApprovalService {
           },
         });
 
-        // ملاحظة: SubService لا يحتوي على approvalStatus في schema
-        // لذلك نستخدم isActive بدلاً منه أو نحذف SubServices المرفوضة
-        
-        // حذف الخدمات الفرعية المرفوضة
+        // Note: SubService does not have an approvalStatus field in the schema.
+        // isAvailable is used instead; rejected sub-services are deleted.
+
+        // Delete rejected sub-services
         if (dto.rejectedSubServiceIds && dto.rejectedSubServiceIds.length > 0) {
           await tx.subService.deleteMany({
             where: {
@@ -222,7 +222,7 @@ export class AdminApprovalService {
             },
           });
         }
-        // تحديث الخدمات الفرعية المقبولة 
+        // Update approved sub-services
         if (dto.approvedSubServiceIds && dto.approvedSubServiceIds.length > 0) {
           await tx.subService.updateMany({
             where: {
@@ -235,13 +235,11 @@ export class AdminApprovalService {
           });
         }
       });
-              // حذف الخدمات الفرعية المرفوضة
 
-      // إحصائيات الخدمات الفرعية
+      // Sub-service approval statistics
       const approvedCount = dto.approvedSubServiceIds?.length || 0;
       const rejectedCount = dto.rejectedSubServiceIds?.length || 0;
 
-     // بعد
 this.domainEventBus.serviceApproved({
   actorId: adminId,
   targetUserId: service.provider.userId,
@@ -263,9 +261,9 @@ this.domainEventBus.serviceApproved({
         },
       };
     } else {
-      // ❌ الرفض
+      // ❌ Rejection
       await this.prisma.$transaction(async (tx) => {
-        // تحديث حالة الخدمة إلى REJECTED
+        // Update service status to REJECTED
         await tx.service.update({
           where: { id: dto.serviceId },
           data: {
@@ -273,7 +271,7 @@ this.domainEventBus.serviceApproved({
           },
         });
 
-        // حذف جميع الخدمات الفرعية
+        // Delete all sub-services
         await tx.subService.deleteMany({
           where: {
             serviceId: dto.serviceId,
@@ -281,7 +279,6 @@ this.domainEventBus.serviceApproved({
         });
       });
 
-     // بعد
 this.domainEventBus.serviceRejected({
   actorId: adminId,
   targetUserId: service.provider.userId,
@@ -305,13 +302,13 @@ this.domainEventBus.serviceRejected({
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 الدالة الثالثة: قبول/رفض خدمة فرعية جديدة
+   * 🔹 Function #3: Approve/Reject a New Sub-Service
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async approveSubService(adminId: string, dto: ApproveSubServiceDto) {
- 
 
-    // 2. جلب الخدمة الفرعية
+
+    // 2. Fetch the sub-service
     const subService = await this.prisma.subService.findUnique({
       where: { id: dto.subServiceId },
       include: {
@@ -332,13 +329,13 @@ this.domainEventBus.serviceRejected({
       throw new NotFoundException('Sub-service not found');
     }
 
-    // ملاحظة: SubService لا يحتوي على approvalStatus في schema
-    // لذلك سنستخدم منطق مختلف: القبول = لا شيء، الرفض = حذف
-    
-    // 3. تنفيذ القبول أو الرفض
+    // Note: SubService does not have an approvalStatus field in the schema.
+    // A different approach is used: approval = mark available, rejection = delete.
+
+    // 3. Execute approval or rejection
     if (dto.isApproved) {
-      // ✅ القبول - لا حاجة لتحديث لأن SubService مقبولة افتراضياً
-        // تحديث الخدمات الفرعية المقبولة 
+      // ✅ Approval — update the sub-service to available
+        // Update the approved sub-service
           await this.prisma.subService.update({
             where: {
               id:dto.subServiceId,
@@ -348,22 +345,23 @@ this.domainEventBus.serviceRejected({
           },
           });
         
-      // TODO: إرسال بريد إلكتروني
+      // TODO: Send email notification
       console.log(`
-        📧 إرسال بريد ترحيب إلى: ${subService.service.provider.user.email}
-        
-        مرحباً ${subService.service.provider.user.fullName},
-        
-        تم قبول الخدمة الفرعية الجديدة! 🎉
-        
-        معلومات الخدمة:
-        - الاسم: ${subService.name}
-        - السعر: ${subService.pricePerUnit} / ${subService.unitType}
-        - الخدمة الرئيسية: ${subService.service.serviceType.name}
-        
-        ${dto.adminMessage ? `ملاحظة من الإدارة: ${dto.adminMessage}` : ''}
-        
-        مع تحيات فريق Eventy
+        📧 Sending welcome email to: ${subService.service.provider.user.email}
+
+        Hello ${subService.service.provider.user.fullName},
+
+        Your new sub-service has been approved! 🎉
+
+        Service details:
+        - Name: ${subService.name}
+        - Price: ${subService.pricePerUnit} / ${subService.unitType}
+        - Parent service: ${subService.service.serviceType.name}
+
+        ${dto.adminMessage ? `Note from admin: ${dto.adminMessage}` : ''}
+
+        Best regards,
+        The Eventy Team
       `);
 
       return {
@@ -376,28 +374,29 @@ this.domainEventBus.serviceRejected({
         },
       };
     } else {
-      // ❌ الرفض - حذف الخدمة الفرعية
+      // ❌ Rejection — delete the sub-service
       await this.prisma.subService.delete({
         where: { id: dto.subServiceId },
       });
 
-      // TODO: إرسال بريد إلكتروني بالاعتذار
+      // TODO: Send rejection email notification
       console.log(`
-        📧 إرسال بريد اعتذار إلى: ${subService.service.provider.user.email}
-        
-        عزيزي ${subService.service.provider.user.fullName},
-        
-        نأسف لإبلاغك بأنه تم رفض الخدمة الفرعية.
-        
-        معلومات الخدمة:
-        - الاسم: ${subService.name}
-        - الخدمة الرئيسية: ${subService.service.serviceType.name}
-        
-        ${dto.adminMessage ? `سبب الرفض: ${dto.adminMessage}` : ''}
-        
-        يمكنك تعديل المعلومات وإعادة التقديم.
-        
-        مع تحيات فريق Eventy
+        📧 Sending rejection email to: ${subService.service.provider.user.email}
+
+        Dear ${subService.service.provider.user.fullName},
+
+        We regret to inform you that your sub-service has been rejected.
+
+        Service details:
+        - Name: ${subService.name}
+        - Parent service: ${subService.service.serviceType.name}
+
+        ${dto.adminMessage ? `Rejection reason: ${dto.adminMessage}` : ''}
+
+        You may update the information and resubmit your request.
+
+        Best regards,
+        The Eventy Team
       `);
 
       return {
@@ -411,7 +410,7 @@ this.domainEventBus.serviceRejected({
       };
     }
   }
-  // قبول/رفض طلب تحديث خدمة
+  // Approve/Reject a service update request
 async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
   const service = await this.prisma.service.findUnique({
     where: { id: dto.serviceId },
@@ -486,7 +485,7 @@ async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
   }
 }
 
-// قبول/رفض طلب تحديث خدمة فرعية
+// Approve/Reject a sub-service update request
 async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
   const subService = await this.prisma.subService.findUnique({
     where: { id: dto.subServiceId },

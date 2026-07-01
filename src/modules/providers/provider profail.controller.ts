@@ -12,6 +12,7 @@ import {
   HttpCode,
   HttpStatus,
   Post,
+  BadRequestException,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -38,20 +39,6 @@ export class ProviderProfileController {
   constructor(
     private readonly providerProfileService: ProviderProfileService,
   ) {}
-
-  // ========== 1. Get Provider Profile ==========
-  @Get()
-  @ApiOperation({
-    summary: 'Get provider full profile',
-    description: 'Returns user info, business info, services, and bank account',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Provider profile retrieved successfully',
-  })
-  async getProfile(@Request() req) {
-    return this.providerProfileService.getProviderProfile(req.user.sub);
-  }
 
  // ========== 2. Update Provider Profile ==========
   @Patch()
@@ -175,4 +162,27 @@ getProviderDashboardSummary(@Request() req) {
   return this.providerProfileService.getProviderDashboardSummary(req.user.sub);
 }
 
+  // ========== 1. Get Provider Profile ==========
+  // Single route, role-branching (see decision 4). Declared last so it
+  // does not shadow the static 'services'/'dashboard' GET routes above.
+  //  - ADMIN: id is required (the provider's user id), returns that provider's profile.
+  //  - Otherwise: id is ignored, returns the caller's own provider profile from the token.
+  @Get(':id?')
+  @ApiOperation({
+    summary: 'Get provider full profile (self, or by user ID as admin)',
+    description: 'Returns user info, business info, services, and bank account',
+  })
+  @ApiParam({ name: 'id', required: false, description: 'Provider user ID (required for admin, ignored otherwise)' })
+  @ApiResponse({
+    status: 200,
+    description: 'Provider profile retrieved successfully',
+  })
+  @ApiResponse({ status: 400, description: 'id is required when requesting as admin' })
+  async getProfile(@Request() req, @Param('id') id?: string) {
+    if (req.user.role === 'ADMIN' && !id) {
+      throw new BadRequestException('id is required when requesting a provider profile as admin');
+    }
+    const targetUserId = req.user.role === 'ADMIN' ? id : req.user.sub;
+    return this.providerProfileService.getProviderProfile(targetUserId);
+  }
 }

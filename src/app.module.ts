@@ -20,8 +20,6 @@ import { BookingsModule } from './modules/bookings/bookings.module';
 import { ProviderProfileController } from './modules/providers/provider profail.controller';
 import { ProviderProfileService } from './modules/providers/provider profail services.service';
 import { AdminModule } from './modules/admin/admin.module';
-import { AdminApprovalController } from './modules/admin/AdminApprovalController';
-import { AdminApprovalService } from './modules/admin/admin-approval-service.service';
 import { ProviderAuthController } from './modules/providers/provider-auth.controller';
 import { FirebaseModule } from './firebase/firebase.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -29,8 +27,6 @@ import { ActionTrackingInterceptor } from './common/interceptors/action-tracking
 import redisConfig from './config/redis.config';
 import { DomainEventBus } from './common/events/domain-event-bus';
 import { EventModule } from './modules/event/event.module';
-import { AdminUseresService } from './modules/admin/admin-useres.service';
-
 
 @Module({
   imports: [
@@ -87,13 +83,11 @@ import { AdminUseresService } from './modules/admin/admin-useres.service';
     AppController,
     ProviderBookingsController,
     ProviderProfileController,
-    AdminApprovalController,
   ],
   providers: [
     AppService,
     ProviderBookingsService,
     ProviderProfileService,
-    AdminApprovalService,
     DomainEventBus,
     // Global interceptors registered via APP_INTERCEPTOR for DI support
     {
@@ -104,7 +98,6 @@ import { AdminUseresService } from './modules/admin/admin-useres.service';
       provide: APP_INTERCEPTOR,
       useClass: ActionTrackingInterceptor,
     },
-    AdminUseresService,
   ],
 })
 export class AppModule {}

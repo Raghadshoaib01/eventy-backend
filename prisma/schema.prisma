@@ -146,6 +146,16 @@ enum EventStatus {
   CANCELLED
 }
 
+enum ChangeRequestTargetType {
+  SERVICE
+  SUB_SERVICE
+}
+
+enum ChangeRequestType {
+  CREATE
+  UPDATE
+}
+
 // =======================
 // SERVICE TYPE
 // =======================
@@ -190,6 +200,7 @@ model User {
   auditLogs     AuditLog[]       @relation("UserAuditLogs")
   bookings      Booking[]
   events Event[]
+  reviewedChangeRequests ServiceChangeRequest[] @relation("ChangeRequestReviewer")
 }
 
 model Customer {
@@ -296,8 +307,8 @@ model SubService {
   unitType      String  @default("unit")
   dailyCapacity Int     @default(1)
   isAvailable   Boolean @default(false)
-  isAutoCreated Boolean @default(false)
-  
+  approvalStatus ServiceStatus @default(PENDING_APPROVAL)
+
   media        SubServiceMedia[]
   bookingItems BookingItem[]
 
@@ -525,11 +536,34 @@ model Event {
   numberOfGuests Int?
   customerNotes  String?
   status         EventStatus @default(DRAFT)
+  archivedAt     DateTime?
   bookings       Booking[]
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt
 
   @@index([customerId])
+}
+
+// =======================
+// SERVICE CHANGE REQUEST
+// =======================
+model ServiceChangeRequest {
+  id          String                   @id @default(uuid())
+  targetType  ChangeRequestTargetType
+  targetId    String
+  requestType ChangeRequestType
+  payload     Json
+  status      ApprovalStatus           @default(PENDING)
+
+  reviewedBy String?
+  reviewer   User?   @relation("ChangeRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
+  reviewNote String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([targetType, targetId])
+  @@index([status])
 }
 
 model BlockedSlot {

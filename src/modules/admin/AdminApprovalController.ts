@@ -1,6 +1,9 @@
 import {
   Controller,
   Post,
+  Get,
+  Param,
+  Query,
   Body,
   UseGuards,
   Request,
@@ -25,6 +28,7 @@ import { AuditAction, UserRole } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { TrackAction } from 'src/common/decorators/track-action.decorator';
 import { DomainEvents } from 'src/common/events/domain-events';
+import { ChangeRequestQueryDto } from './dto/change-request-query.dto';
 
 @ApiTags('Admin - Approvals')
 @Controller('admin/approvals')
@@ -35,6 +39,31 @@ export class AdminApprovalController {
   constructor(
     private readonly adminApprovalService: AdminApprovalService,
   ) {}
+
+  /**
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   * 🔹 Requests Inbox: list / detail
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   */
+  @Get()
+  @ApiOperation({
+    summary: 'List change requests inbox',
+    description:
+      'Covers all 4 cases: new service, service update, new sub-service, sub-service update. ' +
+      'Defaults to PENDING status when no status filter is given.',
+  })
+  @ApiResponse({ status: 200, description: 'Change requests retrieved successfully' })
+  listChangeRequests(@Query() query: ChangeRequestQueryDto) {
+    return this.adminApprovalService.listChangeRequests(query);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Get change request details by ID' })
+  @ApiResponse({ status: 200, description: 'Change request retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Change request not found' })
+  getChangeRequestById(@Param('id') id: string) {
+    return this.adminApprovalService.getChangeRequestById(id);
+  }
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

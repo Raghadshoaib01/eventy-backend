@@ -12,12 +12,14 @@ import { CreateServiceTypeDto } from './dto/create-service-type.dto';
 import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
+import { EngagementService } from 'src/shared/services/engagement.service';
 import { FileType } from '@prisma/client';
 
 @Injectable()
 export class ServicesService {
   constructor(private readonly prisma: PrismaService,
         private readonly cloudinaryService: CloudinaryService,
+        private readonly engagementService: EngagementService,
 
   ) {}
 
@@ -154,7 +156,17 @@ export class ServicesService {
     });
 
   }
-    
+
+    await this.prisma.serviceChangeRequest.create({
+      data: {
+        targetType: 'SERVICE',
+        targetId: service.id,
+        requestType: 'CREATE',
+        payload: dto as unknown as object,
+        status: 'PENDING',
+      },
+    });
+
     return {
       message: 'Service created successfully and pending approval',
       data: service,
@@ -240,7 +252,7 @@ async getServiceById(
 
       // ✅ الخدمات الفرعية مع pagination
       subServices: {
-        where: { isAvailable: true },
+        where: { isAvailable: true, approvalStatus: 'ACTIVE' },
         skip: subsSkip,
         take: subsLimit,
         include: { media: true },
@@ -284,7 +296,7 @@ async getServiceById(
   // ── Pagination meta ────────────────────────────────────────
   const [filesTotal, subsTotal] = await this.prisma.$transaction([
     this.prisma.serviceDetailFile.count({ where: { serviceId } }),
-    this.prisma.subService.count({ where: { serviceId, isAvailable: true } }),
+    this.prisma.subService.count({ where: { serviceId, isAvailable: true, approvalStatus: 'ACTIVE' } }),
   ]);
 
   const { eventTypes: _et, ...rest } = service;
@@ -361,77 +373,49 @@ async getServiceById(
         'workFromTime must be earlier than workToTime',
       );
     }
-const updated = await this.prisma.$transaction(async (tx) => {
-    const updatedService = await tx.service.update({
-      where: { id: serviceId },
-      data: {
-        description: dto.description,
-        minCapacity: dto.minCapacity,
-        maxCapacity: dto.maxCapacity,
-        price: dto.price,
 
-        // ✅ EventTypes
-        eventTypes: dto.eventTypes
-          ? {
-              deleteMany: {},
-              create: dto.eventTypes.map((type) => ({
-                eventType: type,
-              })),
-            }
-          : undefined,
+    if (service.approvalStatus !== 'ACTIVE') {
+      throw new BadRequestException(
+        `Service cannot be edited while it is ${service.approvalStatus}`,
+      );
+    }
 
-        // ✅ FIX: updateMany مع where + partial update
-        availability:
-          dto.workFromTime !== undefined ||
-          dto.workToTime !== undefined ||
-          dto.hasSlots !== undefined
-            ? {
-                updateMany: {
-                  where: { serviceId: serviceId }, // ✅ حل الخطأ
-                  data: {
-                    ...(dto.workFromTime !== undefined && {
-                      workFromTime: dto.workFromTime,
-                    }),
-                    ...(dto.workToTime !== undefined && {
-                      workToTime: dto.workToTime,
-                    }),
-                    ...(dto.hasSlots !== undefined && {
-                      hasSlots: dto.hasSlots,
-                    }),
-                  },
-                },
-              }
-            : undefined,
-      },
-      include: {
-        availability: {
-          include: { timeSlots: true },
+    const engaged = await this.engagementService.hasActiveEngagement(
+      'SERVICE',
+      serviceId,
+    );
+    if (engaged) {
+      throw new BadRequestException(
+        'Cannot request an update while the service has an active engagement (confirmed/in-progress booking on a live event)',
+      );
+    }
+
+    const changeRequest = await this.prisma.$transaction(async (tx) => {
+      const cr = await tx.serviceChangeRequest.create({
+        data: {
+          targetType: 'SERVICE',
+          targetId: serviceId,
+          requestType: 'UPDATE',
+          payload: dto as unknown as object,
+          status: 'PENDING',
         },
-        eventTypes: true,
-        subServices: true,
-      },
+      });
+
+      await tx.service.update({
+        where: { id: serviceId },
+        data: { approvalStatus: 'PENDING_APPROVAL' },
+      });
+
+      return cr;
     });
 
-    // ✅ FIX: timeSlots بدون أخطاء
-    if (dto.timeSlots && service.availability.length > 0) {
-      const availabilityId = service.availability[0].id;
-
-      await tx.timeSlot.deleteMany({
-        where: { availabilityId },
-      });
-
-      await tx.timeSlot.createMany({
-        data: dto.timeSlots.map((slot) => ({
-          ...slot,
-          availabilityId,
-        })),
-      });
-    }
-return updatedService; // بنرجع النتيجة برات الـ transaction
-  });
     return {
-      message: 'Service updated successfully',
-      data: updated,
+      message: 'Update request submitted for admin review',
+      data: {
+        serviceId,
+        changeRequestId: changeRequest.id,
+        approvalStatus: 'PENDING_APPROVAL',
+      },
     };
   }
 
@@ -538,6 +522,7 @@ return updatedService; // بنرجع النتيجة برات الـ transaction
             subServices: {
               some: {
                 isAvailable:  true,
+                approvalStatus: 'ACTIVE',
                 unitType:     'ITEM',
                 pricePerUnit: { lte: budget / guests },
               },
@@ -549,6 +534,7 @@ return updatedService; // بنرجع النتيجة برات الـ transaction
             subServices: {
               some: {
                 isAvailable:  true,
+                approvalStatus: 'ACTIVE',
                 unitType:     'SESSION',
                 pricePerUnit: { lte: budget },
               },
@@ -586,7 +572,7 @@ return updatedService; // بنرجع النتيجة برات الـ transaction
             },
           },
           subServices: {
-            where:   { isAvailable: true },
+            where:   { isAvailable: true, approvalStatus: 'ACTIVE' },
             select: {
               id:           true,
               name:         true,

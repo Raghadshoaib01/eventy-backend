@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
+import { EngagementService } from 'src/shared/services/engagement.service';
 import { CreateSubServiceDto } from './dto/create-sub-service.dto';
 import {FileType} from '@prisma/client';
 import { UpdateSubServiceDto } from './dto/update-sub-service.dto';
@@ -10,6 +11,7 @@ export class SubServiceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly engagementService: EngagementService,
   ) {}
 
 
@@ -103,6 +105,16 @@ async createSubService(
     },
     include: {
       media: true,
+    },
+  });
+
+  await this.prisma.serviceChangeRequest.create({
+    data: {
+      targetType: 'SUB_SERVICE',
+      targetId: subService.id,
+      requestType: 'CREATE',
+      payload: dto as unknown as object,
+      status: 'PENDING',
     },
   });
 
@@ -260,15 +272,18 @@ async updateSubService(
   }
 
   // =====================================================
-  // 2. التأكد أن الخدمة الرئيسية مفعلة
+  // 2. التأكد أن الخدمة الرئيسية والخدمة الفرعية مفعّلتين
   // =====================================================
 
-  if (
-    subService.service.approvalStatus !==
-    'ACTIVE'
-  ) {
+  if (subService.service.approvalStatus !== 'ACTIVE') {
     throw new BadRequestException(
       'Cannot update sub-service before service approval',
+    );
+  }
+
+  if (subService.approvalStatus !== 'ACTIVE') {
+    throw new BadRequestException(
+      `Sub-service cannot be edited while it is ${subService.approvalStatus}`,
     );
   }
 
@@ -286,109 +301,70 @@ async updateSubService(
   }
 
   // =====================================================
-  // 4. تحديث البيانات الأساسية
+  // 4. منع طلب تعديل أثناء وجود ارتباط فعّال (حجز مؤكد ضمن مناسبة حيّة)
   // =====================================================
 
-  await this.prisma.subService.update({
-    where: {
-      id: subServiceId,
-    },
-
-    data: {
-      ...(dto.name !== undefined && {
-        name: dto.name,
-      }),
-
-      ...(dto.description !== undefined && {
-        description: dto.description,
-      }),
-
-      ...(dto.pricePerUnit !== undefined && {
-        pricePerUnit: dto.pricePerUnit,
-      }),
-
-      ...(dto.unitType !== undefined && {
-        unitType: dto.unitType,
-      }),
-
-      ...(dto.dailyCapacity !== undefined && {
-        dailyCapacity: dto.dailyCapacity,
-      }),
-
-
-    },
-  });
-
-  // =====================================================
-  // 5. رفع ملفات جديدة
-  // =====================================================
-
-  if (media?.length) {
-
-    await Promise.all(
-      media.map(async (file) => {
-
-        // =========================================
-        // TODO:
-        // Cloudinary Upload
-        // =========================================
-
-        const uploadedFile = {
-          secure_url: 'uploaded-url',
-          public_id: 'public-id',
-        };
-
-        await this.prisma.subServiceMedia.create({
-          data: {
-            subServiceId: subService.id,
-
-            url: uploadedFile.secure_url,
-
-            publicId: uploadedFile.public_id,
-
-            type: file.mimetype.startsWith(
-              'video',
-            )
-              ? 'VIDEO'
-              : 'IMAGE',
-          },
-        });
-      }),
+  const engaged = await this.engagementService.hasActiveEngagement(
+    'SUB_SERVICE',
+    subServiceId,
+  );
+  if (engaged) {
+    throw new BadRequestException(
+      'Cannot request an update while the sub-service has an active engagement (confirmed/in-progress booking on a live event)',
     );
   }
 
   // =====================================================
-  // 6. جلب النسخة النهائية
+  // 5. رفع ملفات جديدة يتم إرفاقها كجزء من الطلب فقط (لا تُطبّق مباشرة)
   // =====================================================
 
-  const finalSubService =
-    await this.prisma.subService.findUnique({
-      where: {
-        id: subServiceId,
-      },
+  const uploadedMedia = media?.length
+    ? await Promise.all(
+        media.map(async (file) => {
+          const uploaded = await this.cloudinaryService.upload(file, {
+            folder: 'eventy/sub-services',
+          });
+          return {
+            url: uploaded.url,
+            type: file.mimetype.startsWith('video') ? FileType.VIDEO : FileType.IMAGE,
+            publicId: uploaded.publicId,
+          };
+        }),
+      )
+    : [];
 
-      include: {
-        media: true,
+  const payload = { ...dto, newMedia: uploadedMedia };
 
-        service: {
-          include: {
-            serviceType: true,
-          },
-        },
+  // =====================================================
+  // 6. إنشاء طلب تعديل + تجميد الخدمة الفرعية لحين المراجعة
+  // =====================================================
+
+  const changeRequest = await this.prisma.$transaction(async (tx) => {
+    const cr = await tx.serviceChangeRequest.create({
+      data: {
+        targetType: 'SUB_SERVICE',
+        targetId: subServiceId,
+        requestType: 'UPDATE',
+        payload: payload as unknown as object,
+        status: 'PENDING',
       },
     });
 
-  // =====================================================
-  // 7. Response
-  // =====================================================
+    await tx.subService.update({
+      where: { id: subServiceId },
+      data: { approvalStatus: 'PENDING_APPROVAL' },
+    });
+
+    return cr;
+  });
 
   return {
-    success: true,
-
-    message:
-      'Sub-service updated successfully',
-
-    data: finalSubService,
+    message: 'Update request submitted for admin review',
+    data: {
+      subServiceId,
+      changeRequestId: changeRequest.id,
+      approvalStatus: 'PENDING_APPROVAL',
+    },
   };
 }
 

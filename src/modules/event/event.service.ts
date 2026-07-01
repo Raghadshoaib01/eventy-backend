@@ -38,7 +38,7 @@ export class EventService {
       include: {
         serviceType: true,
         provider: { include: { user: { select: { id: true } } } },
-        subServices: { where: { isAvailable: true } },
+        subServices: { where: { isAvailable: true, approvalStatus: 'ACTIVE' } },
         availability: { include: { workingDays: true, timeSlots: true } },
       },
     });

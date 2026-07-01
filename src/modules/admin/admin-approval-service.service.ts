@@ -19,15 +19,112 @@ import {
   ServiceRejectedPayload,
 } from 'src/common/events/domain-events';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
+import { ChangeRequestQueryDto } from './dto/change-request-query.dto';
 
 @Injectable()
 export class AdminApprovalService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly eventEmitter: EventEmitter2,
-    private readonly domainEventBus: DomainEventBus,   
+    private readonly domainEventBus: DomainEventBus,
   ) {}
 
+  /**
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   * 🔹 Requests Inbox: list / detail across all 4 cases
+   * (new service, service update, new sub-service, sub-service update)
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   */
+  async listChangeRequests(query: ChangeRequestQueryDto) {
+    const { page = 1, limit = 10, order = 'desc', targetType, requestType, status } = query;
+    const skip = (page - 1) * limit;
+
+    const where = {
+      ...(targetType && { targetType }),
+      ...(requestType && { requestType }),
+      status: status ?? ApprovalStatus.PENDING,
+    };
+
+    const [requests, total] = await this.prisma.$transaction([
+      this.prisma.serviceChangeRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: order },
+      }),
+      this.prisma.serviceChangeRequest.count({ where }),
+    ]);
+
+    const items = await Promise.all(
+      requests.map((r) => this.enrichChangeRequest(r)),
+    );
+
+    return {
+      message: 'Change requests retrieved successfully',
+      data: {
+        items,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      },
+    };
+  }
+
+  async getChangeRequestById(id: string) {
+    const request = await this.prisma.serviceChangeRequest.findUnique({
+      where: { id },
+    });
+
+    if (!request) throw new NotFoundException('Change request not found');
+
+    return {
+      message: 'Change request retrieved successfully',
+      data: await this.enrichChangeRequest(request),
+    };
+  }
+
+  private async enrichChangeRequest(request: {
+    id: string;
+    targetType: string;
+    targetId: string;
+    requestType: string;
+    payload: unknown;
+    status: string;
+    reviewedBy: string | null;
+    reviewNote: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }) {
+    let target: unknown = null;
+
+    if (request.targetType === 'SERVICE') {
+      target = await this.prisma.service.findUnique({
+        where: { id: request.targetId },
+        select: {
+          id: true,
+          approvalStatus: true,
+          serviceType: { select: { name: true } },
+          provider: { select: { businessName: true, userId: true } },
+        },
+      });
+    } else {
+      target = await this.prisma.subService.findUnique({
+        where: { id: request.targetId },
+        select: {
+          id: true,
+          name: true,
+          pricePerUnit: true,
+          approvalStatus: true,
+          service: {
+            select: {
+              serviceType: { select: { name: true } },
+              provider: { select: { businessName: true, userId: true } },
+            },
+          },
+        },
+      });
+    }
+
+    return { ...request, target };
+  }
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -166,11 +263,26 @@ export class AdminApprovalService {
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 Function #2: Approve/Reject a New Service
+   * 🔹 Function #2: Approve/Reject a New Service (ServiceChangeRequest CREATE)
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async approveService(adminId: string, dto: ApproveServiceDto) {
+    // 1. Fetch the pending CREATE change request for this service
+    const changeRequest = await this.prisma.serviceChangeRequest.findFirst({
+      where: {
+        targetType: 'SERVICE',
+        targetId: dto.serviceId,
+        requestType: 'CREATE',
+        status: 'PENDING',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
+    if (!changeRequest) {
+      throw new NotFoundException(
+        'No pending creation request found for this service',
+      );
+    }
 
     // 2. Fetch the service along with its sub-services
     const service = await this.prisma.service.findUnique({
@@ -189,29 +301,17 @@ export class AdminApprovalService {
     if (!service) {
       throw new NotFoundException('Service not found');
     }
-    // 3. Verify that the service is in PENDING_DETAILS or PENDING_APPROVAL status
-    if (
-      !['PENDING_DETAILS', 'PENDING_APPROVAL'].includes(service.approvalStatus || '')
-    ) {
-      throw new BadRequestException(
-        `Service status is already ${service.approvalStatus}`,
-      );
-    }
 
-    // 4. Execute approval or rejection
+    // 3. Execute approval or rejection
     if (dto.isApproved) {
-      // ✅ Approval
+      // ✅ Approval → PENDING_DETAILS (provider must complete details next)
       await this.prisma.$transaction(async (tx) => {
-        // Update service status to ACTIVE
         await tx.service.update({
           where: { id: dto.serviceId },
           data: {
-            approvalStatus: 'ACTIVE',
+            approvalStatus: 'PENDING_DETAILS',
           },
         });
-
-        // Note: SubService does not have an approvalStatus field in the schema.
-        // isAvailable is used instead; rejected sub-services are deleted.
 
         // Delete rejected sub-services
         if (dto.rejectedSubServiceIds && dto.rejectedSubServiceIds.length > 0) {
@@ -230,10 +330,20 @@ export class AdminApprovalService {
               serviceId: dto.serviceId,
             },
             data: {
-            isAvailable:true,
-          },
+              isAvailable: true,
+              approvalStatus: 'ACTIVE',
+            },
           });
         }
+
+        await tx.serviceChangeRequest.update({
+          where: { id: changeRequest.id },
+          data: {
+            status: 'APPROVED',
+            reviewedBy: adminId,
+            reviewNote: dto.adminMessage,
+          },
+        });
       });
 
       // Sub-service approval statistics
@@ -254,7 +364,7 @@ this.domainEventBus.serviceApproved({
         data: {
           serviceId: service.id,
           serviceName: service.serviceType.name,
-          approvalStatus: 'ACTIVE',
+          approvalStatus: 'PENDING_DETAILS',
           approvedSubServices: approvedCount,
           rejectedSubServices: rejectedCount,
           adminMessage: dto.adminMessage || null,
@@ -275,6 +385,15 @@ this.domainEventBus.serviceApproved({
         await tx.subService.deleteMany({
           where: {
             serviceId: dto.serviceId,
+          },
+        });
+
+        await tx.serviceChangeRequest.update({
+          where: { id: changeRequest.id },
+          data: {
+            status: 'REJECTED',
+            reviewedBy: adminId,
+            reviewNote: dto.adminMessage,
           },
         });
       });
@@ -302,11 +421,26 @@ this.domainEventBus.serviceRejected({
 
   /**
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-   * 🔹 Function #3: Approve/Reject a New Sub-Service
+   * 🔹 Function #3: Approve/Reject a New Sub-Service (ServiceChangeRequest CREATE)
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
   async approveSubService(adminId: string, dto: ApproveSubServiceDto) {
+    // 1. Fetch the pending CREATE change request for this sub-service
+    const changeRequest = await this.prisma.serviceChangeRequest.findFirst({
+      where: {
+        targetType: 'SUB_SERVICE',
+        targetId: dto.subServiceId,
+        requestType: 'CREATE',
+        status: 'PENDING',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
+    if (!changeRequest) {
+      throw new NotFoundException(
+        'No pending creation request found for this sub-service',
+      );
+    }
 
     // 2. Fetch the sub-service
     const subService = await this.prisma.subService.findUnique({
@@ -329,22 +463,25 @@ this.domainEventBus.serviceRejected({
       throw new NotFoundException('Sub-service not found');
     }
 
-    // Note: SubService does not have an approvalStatus field in the schema.
-    // A different approach is used: approval = mark available, rejection = delete.
-
     // 3. Execute approval or rejection
     if (dto.isApproved) {
-      // ✅ Approval — update the sub-service to available
-        // Update the approved sub-service
-          await this.prisma.subService.update({
-            where: {
-              id:dto.subServiceId,
-            },
-            data: {
-            isAvailable:true,
+      // ✅ Approval — activate the sub-service
+      await this.prisma.$transaction(async (tx) => {
+        await tx.subService.update({
+          where: { id: dto.subServiceId },
+          data: { isAvailable: true, approvalStatus: 'ACTIVE' },
+        });
+
+        await tx.serviceChangeRequest.update({
+          where: { id: changeRequest.id },
+          data: {
+            status: 'APPROVED',
+            reviewedBy: adminId,
+            reviewNote: dto.adminMessage,
           },
-          });
-        
+        });
+      });
+
       // TODO: Send email notification
       console.log(`
         📧 Sending welcome email to: ${subService.service.provider.user.email}
@@ -375,8 +512,19 @@ this.domainEventBus.serviceRejected({
       };
     } else {
       // ❌ Rejection — delete the sub-service
-      await this.prisma.subService.delete({
-        where: { id: dto.subServiceId },
+      await this.prisma.$transaction(async (tx) => {
+        await tx.serviceChangeRequest.update({
+          where: { id: changeRequest.id },
+          data: {
+            status: 'REJECTED',
+            reviewedBy: adminId,
+            reviewNote: dto.adminMessage,
+          },
+        });
+
+        await tx.subService.delete({
+          where: { id: dto.subServiceId },
+        });
       });
 
       // TODO: Send rejection email notification
@@ -410,31 +558,85 @@ this.domainEventBus.serviceRejected({
       };
     }
   }
-  // Approve/Reject a service update request
+  // Approve/Reject a service update request (ServiceChangeRequest UPDATE)
 async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
+  const changeRequest = await this.prisma.serviceChangeRequest.findFirst({
+    where: {
+      targetType: 'SERVICE',
+      targetId: dto.serviceId,
+      requestType: 'UPDATE',
+      status: 'PENDING',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!changeRequest) {
+    throw new NotFoundException(
+      'No pending update request found for this service',
+    );
+  }
+
   const service = await this.prisma.service.findUnique({
     where: { id: dto.serviceId },
     include: {
       serviceType: true,
       provider: { include: { user: true } },
       subServices: true,
+      availability: true,
     },
   });
 
   if (!service) throw new NotFoundException('Service not found');
 
-  if (service.approvalStatus !== 'PENDING_DETAILS') {
+  if (service.approvalStatus !== 'PENDING_APPROVAL') {
     throw new BadRequestException(
       `Service is not pending update review. Current status: ${service.approvalStatus}`,
     );
   }
 
+  const payload = changeRequest.payload as Record<string, any>;
+
   if (dto.isApproved) {
     await this.prisma.$transaction(async (tx) => {
       await tx.service.update({
         where: { id: dto.serviceId },
-        data: { approvalStatus: 'ACTIVE' },
+        data: {
+          approvalStatus: 'ACTIVE',
+          description: payload.description,
+          minCapacity: payload.minCapacity,
+          maxCapacity: payload.maxCapacity,
+          price: payload.price,
+          eventTypes: payload.eventTypes
+            ? {
+                deleteMany: {},
+                create: payload.eventTypes.map((type: string) => ({ eventType: type })),
+              }
+            : undefined,
+          availability:
+            payload.workFromTime !== undefined ||
+            payload.workToTime !== undefined ||
+            payload.hasSlots !== undefined
+              ? {
+                  updateMany: {
+                    where: { serviceId: dto.serviceId },
+                    data: {
+                      ...(payload.workFromTime !== undefined && { workFromTime: payload.workFromTime }),
+                      ...(payload.workToTime !== undefined && { workToTime: payload.workToTime }),
+                      ...(payload.hasSlots !== undefined && { hasSlots: payload.hasSlots }),
+                    },
+                  },
+                }
+              : undefined,
+        },
       });
+
+      if (payload.timeSlots && service.availability.length > 0) {
+        const availabilityId = service.availability[0].id;
+        await tx.timeSlot.deleteMany({ where: { availabilityId } });
+        await tx.timeSlot.createMany({
+          data: payload.timeSlots.map((slot: any) => ({ ...slot, availabilityId })),
+        });
+      }
 
       if (dto.rejectedSubServiceIds?.length) {
         await tx.subService.deleteMany({
@@ -451,9 +653,18 @@ async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
             id: { in: dto.approvedSubServiceIds },
             serviceId: dto.serviceId,
           },
-          data: { isAvailable: true },
+          data: { isAvailable: true, approvalStatus: 'ACTIVE' },
         });
       }
+
+      await tx.serviceChangeRequest.update({
+        where: { id: changeRequest.id },
+        data: {
+          status: 'APPROVED',
+          reviewedBy: adminId,
+          reviewNote: dto.adminMessage,
+        },
+      });
     });
 
     return {
@@ -468,9 +679,20 @@ async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
       },
     };
   } else {
-    await this.prisma.service.update({
-      where: { id: dto.serviceId },
-      data: { approvalStatus: 'REJECTED' },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.service.update({
+        where: { id: dto.serviceId },
+        data: { approvalStatus: 'REJECTED' },
+      });
+
+      await tx.serviceChangeRequest.update({
+        where: { id: changeRequest.id },
+        data: {
+          status: 'REJECTED',
+          reviewedBy: adminId,
+          reviewNote: dto.adminMessage,
+        },
+      });
     });
 
     return {
@@ -485,8 +707,24 @@ async approveServiceUpdate(adminId: string, dto: ApproveServiceDto) {
   }
 }
 
-// Approve/Reject a sub-service update request
+// Approve/Reject a sub-service update request (ServiceChangeRequest UPDATE)
 async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
+  const changeRequest = await this.prisma.serviceChangeRequest.findFirst({
+    where: {
+      targetType: 'SUB_SERVICE',
+      targetId: dto.subServiceId,
+      requestType: 'UPDATE',
+      status: 'PENDING',
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (!changeRequest) {
+    throw new NotFoundException(
+      'No pending update request found for this sub-service',
+    );
+  }
+
   const subService = await this.prisma.subService.findUnique({
     where: { id: dto.subServiceId },
     include: {
@@ -501,16 +739,48 @@ async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
 
   if (!subService) throw new NotFoundException('Sub-service not found');
 
-  if (subService.service.approvalStatus !== 'ACTIVE') {
+  if (subService.approvalStatus !== 'PENDING_APPROVAL') {
     throw new BadRequestException(
-      'Parent service must be ACTIVE to review sub-service updates',
+      `Sub-service is not pending update review. Current status: ${subService.approvalStatus}`,
     );
   }
 
+  const payload = changeRequest.payload as Record<string, any>;
+
   if (dto.isApproved) {
-    await this.prisma.subService.update({
-      where: { id: dto.subServiceId },
-      data: { isAvailable: true },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subService.update({
+        where: { id: dto.subServiceId },
+        data: {
+          isAvailable: true,
+          approvalStatus: 'ACTIVE',
+          ...(payload.name !== undefined && { name: payload.name }),
+          ...(payload.description !== undefined && { description: payload.description }),
+          ...(payload.pricePerUnit !== undefined && { pricePerUnit: payload.pricePerUnit }),
+          ...(payload.unitType !== undefined && { unitType: payload.unitType }),
+          ...(payload.dailyCapacity !== undefined && { dailyCapacity: payload.dailyCapacity }),
+        },
+      });
+
+      if (payload.newMedia?.length) {
+        await tx.subServiceMedia.createMany({
+          data: payload.newMedia.map((m: any) => ({
+            subServiceId: dto.subServiceId,
+            url: m.url,
+            type: m.type,
+            publicId: m.publicId,
+          })),
+        });
+      }
+
+      await tx.serviceChangeRequest.update({
+        where: { id: changeRequest.id },
+        data: {
+          status: 'APPROVED',
+          reviewedBy: adminId,
+          reviewNote: dto.adminMessage,
+        },
+      });
     });
 
     return {
@@ -523,9 +793,20 @@ async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
       },
     };
   } else {
-    await this.prisma.subService.update({
-      where: { id: dto.subServiceId },
-      data: { isAvailable: false },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.subService.update({
+        where: { id: dto.subServiceId },
+        data: { isAvailable: false, approvalStatus: 'REJECTED' },
+      });
+
+      await tx.serviceChangeRequest.update({
+        where: { id: changeRequest.id },
+        data: {
+          status: 'REJECTED',
+          reviewedBy: adminId,
+          reviewNote: dto.adminMessage,
+        },
+      });
     });
 
     return {

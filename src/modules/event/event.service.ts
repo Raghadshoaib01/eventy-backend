@@ -287,15 +287,25 @@ export class EventService {
     sortBy = 'createdAt',
     order = 'desc',
     status,
+    fromDate,
+    toDate,
   } = dto;
 
   const skip = (page - 1) * limit;
 
-  const where: any = {};
+  const where: any = { archivedAt: null };
 
   // فلتر الحالة إذا تم تمريرها
   if (status) {
     where.status = status;
+  }
+
+  // فلتر المدى الزمني (يُستخدم من قِبل التقويم)
+  if (fromDate || toDate) {
+    where.eventDate = {
+      ...(fromDate && { gte: new Date(fromDate) }),
+      ...(toDate && { lte: new Date(toDate) }),
+    };
   }
 
   // إذا لم يكن أدمن يرجع مناسباته فقط

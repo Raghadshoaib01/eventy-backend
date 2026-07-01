@@ -20,6 +20,8 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { ProviderBookingsService } from './provider-bookings.service';
 import { SendQuoteDto } from './dto/send-quote.dto';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import { AuditAction } from '@prisma/client';
 
 @ApiTags('Provider Bookings')
 @ApiBearerAuth('JWT-auth')
@@ -64,6 +66,7 @@ export class ProviderBookingsController {
   // PATCH /provider-bookings/:bookingId/quote
   // ────────────────────────────────────────────
   @Patch(':bookingId/quote')
+  @Audit({ action: AuditAction.BOOKING_QUOTE, entity: 'Booking', entityIdKey: 'bookingId' })
   @ApiOperation({
     summary: 'Send price quote to customer',
     description:

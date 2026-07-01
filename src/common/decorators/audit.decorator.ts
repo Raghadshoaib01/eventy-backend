@@ -6,8 +6,12 @@ import { AuditAction } from '@prisma/client';
 export const AUDIT_KEY = 'audit_action';
 
 export interface AuditOptions {
-  /** The audit action type to log */
-  action: AuditAction;
+  /**
+   * The audit action type to log. Accepts either a fixed AuditAction, or a
+   * resolver function for endpoints whose outcome (approve vs reject, accept
+   * vs cancel, ...) is only known from the response data.
+   */
+  action: AuditAction | ((responseData: unknown) => AuditAction);
   /** The entity type being audited */
   entity: string;
   /**

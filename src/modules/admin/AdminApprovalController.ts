@@ -29,6 +29,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { TrackAction } from 'src/common/decorators/track-action.decorator';
 import { DomainEvents } from 'src/common/events/domain-events';
 import { ChangeRequestQueryDto } from './dto/change-request-query.dto';
+import { Audit } from 'src/common/decorators/audit.decorator';
 
 @ApiTags('Admin - Approvals')
 @Controller('admin/approvals')
@@ -78,6 +79,12 @@ export class AdminApprovalController {
   notify: DomainEvents.PROVIDER_APPROVED,    // ✅ Emit domain event
   entityIdPath: 'providerId'
 })
+  @Audit({
+    action: (data: any) =>
+      data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+    entity: 'ServiceProvider',
+    entityIdKey: 'providerId',
+  })
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
     summary: 'Approve or reject a new service provider join request',
@@ -136,6 +143,12 @@ export class AdminApprovalController {
    */
   @Post('service')
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: (data: any) =>
+      data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+    entity: 'Service',
+    entityIdKey: 'serviceId',
+  })
   @ApiOperation({
     summary: 'Approve or reject a new service',
     description: `
@@ -190,6 +203,12 @@ export class AdminApprovalController {
    */
   @Post('sub-service')
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: (data: any) =>
+      data?.data?.status === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+    entity: 'SubService',
+    entityIdKey: 'subServiceId',
+  })
   @ApiOperation({
     summary: 'Approve or reject a new sub-service',
     description: `
@@ -241,6 +260,12 @@ export class AdminApprovalController {
  */
 @Post('service-update')
 @HttpCode(HttpStatus.OK)
+@Audit({
+  action: (data: any) =>
+    data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+  entity: 'Service',
+  entityIdKey: 'serviceId',
+})
 @ApiOperation({
   summary: 'Approve or reject a service update request',
   description: `
@@ -299,6 +324,12 @@ async approveServiceUpdate(@Request() req, @Body() dto: ApproveServiceDto) {
  */
 @Post('sub-service-update')
 @HttpCode(HttpStatus.OK)
+@Audit({
+  action: (data: any) =>
+    data?.data?.status === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+  entity: 'SubService',
+  entityIdKey: 'subServiceId',
+})
 @ApiOperation({
   summary: 'Approve or reject a sub-service update request',
   description: `

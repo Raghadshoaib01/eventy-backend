@@ -101,9 +101,14 @@ export class ActionTrackingInterceptor implements NestInterceptor {
 
             setImmediate(async () => {
               try {
+                const action =
+                  typeof auditOptions.action === 'function'
+                    ? auditOptions.action(responseData)
+                    : auditOptions.action;
+
                 await this.prisma.auditLog.create({
                   data: {
-                    action: auditOptions.action,
+                    action,
                     entity: auditOptions.entity,
                     entityId: entityId ?? undefined,
                     newValue: (responseData as object) ?? undefined,

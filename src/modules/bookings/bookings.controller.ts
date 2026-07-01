@@ -19,6 +19,8 @@ import {
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { BookingsService } from './bookings.service';
 import { QuoteDecisionDto } from './dto/quote-decision.dto';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import { AuditAction } from '@prisma/client';
 
 @ApiTags('Bookings')
 @ApiBearerAuth('JWT-auth')
@@ -32,6 +34,12 @@ export class BookingsController {
   // ────────────────────────────────────────────
   @Patch(':bookingId/quote-decision')
   @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: (data: any) =>
+      data?.data?.bookingStatus === 'CANCELLED' ? AuditAction.BOOKING_REJECT : AuditAction.BOOKING_ACCEPT,
+    entity: 'Booking',
+    entityIdKey: 'bookingId',
+  })
   @ApiOperation({
     summary: 'Customer accepts or rejects a provider quote',
     description:

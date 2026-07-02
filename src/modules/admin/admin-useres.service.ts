@@ -248,14 +248,6 @@ export class AdminUseresService {
               createdAt: true,
             },
           },
-          services: {
-            take: 1,
-            include: {
-              serviceType: { select: { name: true } },
-              eventTypes: { select: { eventType: true } },
-              files: { take: 1, select: { fileUrl: true, fileType: true } },
-            },
-          },
         },
       }),
       this.prisma.serviceProvider.count({ where }),

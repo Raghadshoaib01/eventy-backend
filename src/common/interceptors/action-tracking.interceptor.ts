@@ -49,11 +49,11 @@ export class ActionTrackingInterceptor implements NestInterceptor {
     const startTime = Date.now();
     const http = context.switchToHttp();
     const request = http.getRequest<
-      Request & { user?: { id?: string; role?: string } }
+      Request & { user?: { sub?: string; role?: string } }
     >();
 
     const { method, url, ip } = request;
-    const actorId = request.user?.id ?? null;
+    const actorId = request.user?.sub ?? null;
 
     return next.handle().pipe(
       tap({

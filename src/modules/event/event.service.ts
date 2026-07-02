@@ -289,11 +289,12 @@ export class EventService {
     status,
     fromDate,
     toDate,
+    archived,
   } = dto;
 
   const skip = (page - 1) * limit;
 
-  const where: any = { archivedAt: null };
+  const where: any = { archivedAt: archived ? { not: null } : null };
 
   // فلتر الحالة إذا تم تمريرها
   if (status) {
@@ -347,15 +348,54 @@ export class EventService {
   ]);
 
   return {
-    data: events,
-
-    meta: {
-      page,
-      limit,
-      total,
-      totalPages: Math.ceil(total / limit),
+    message: 'Events retrieved successfully',
+    data: {
+      items: events,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     },
   };
 }
+
+  // ─────────────────────────────────────────────────────────────
+  // PATCH /events/:eventId/archive
+  // PATCH /events/:eventId/unarchive
+  // ─────────────────────────────────────────────────────────────
+  private async setArchived(user: JwtPayload, eventId: string, archived: boolean) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Event not found');
+
+    if (user.role !== UserRole.ADMIN && event.customerId !== user.sub) {
+      throw new ForbiddenException('Access denied — not your event');
+    }
+
+    if (!['COMPLETED', 'CANCELLED'].includes(event.status)) {
+      throw new BadRequestException(
+        'Only COMPLETED or CANCELLED events can be archived/unarchived',
+      );
+    }
+
+    const updated = await this.prisma.event.update({
+      where: { id: eventId },
+      data: { archivedAt: archived ? new Date() : null },
+    });
+
+    return {
+      message: archived ? 'Event archived successfully' : 'Event unarchived successfully',
+      data: { eventId: updated.id, archivedAt: updated.archivedAt },
+    };
+  }
+
+  archiveEvent(user: JwtPayload, eventId: string) {
+    return this.setArchived(user, eventId, true);
+  }
+
+  unarchiveEvent(user: JwtPayload, eventId: string) {
+    return this.setArchived(user, eventId, false);
+  }
 
 }

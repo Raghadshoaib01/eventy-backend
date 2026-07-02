@@ -3,7 +3,10 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
+  Patch,
   Post,
   Query,
   Request,
@@ -22,6 +25,8 @@ import { CreateEventDto } from './dto/create-event.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtPayload } from 'src/common/helpers/token.helper';
 import { GetEventsDto } from './dto/get-events.dto';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import { AuditAction } from '@prisma/client';
 
 @ApiTags('Events')
 @ApiBearerAuth('JWT-auth')
@@ -65,11 +70,55 @@ export class EventController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'List events',
+    description:
+      'Reused by the admin calendar via fromDate/toDate, and by the archive tab via archived=true. ' +
+      'Archived events are hidden from the default list.',
+  })
   getEvents(
     @CurrentUser() user: JwtPayload,
 
     @Query() dto: GetEventsDto,
   ) {
     return this.eventService.getEvents(user, dto);
+  }
+
+  // ────────────────────────────────────────────
+  // PATCH /events/:eventId/archive
+  // ────────────────────────────────────────────
+  @Patch(':eventId/archive')
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.UPDATE, entity: 'Event', entityIdKey: 'eventId' })
+  @ApiOperation({
+    summary: 'Archive an event',
+    description: 'Owner or admin only. Event must be COMPLETED or CANCELLED.',
+  })
+  @ApiParam({ name: 'eventId', description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Event archived successfully' })
+  @ApiResponse({ status: 400, description: 'Event is not COMPLETED or CANCELLED' })
+  @ApiResponse({ status: 403, description: 'Access denied — not your event' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  archiveEvent(@CurrentUser() user: JwtPayload, @Param('eventId') eventId: string) {
+    return this.eventService.archiveEvent(user, eventId);
+  }
+
+  // ────────────────────────────────────────────
+  // PATCH /events/:eventId/unarchive
+  // ────────────────────────────────────────────
+  @Patch(':eventId/unarchive')
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.UPDATE, entity: 'Event', entityIdKey: 'eventId' })
+  @ApiOperation({
+    summary: 'Unarchive an event',
+    description: 'Owner or admin only. Event must be COMPLETED or CANCELLED.',
+  })
+  @ApiParam({ name: 'eventId', description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Event unarchived successfully' })
+  @ApiResponse({ status: 400, description: 'Event is not COMPLETED or CANCELLED' })
+  @ApiResponse({ status: 403, description: 'Access denied — not your event' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  unarchiveEvent(@CurrentUser() user: JwtPayload, @Param('eventId') eventId: string) {
+    return this.eventService.unarchiveEvent(user, eventId);
   }
 }

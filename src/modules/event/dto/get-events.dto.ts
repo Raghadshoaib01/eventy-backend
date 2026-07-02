@@ -1,5 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsOptional } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsOptional } from 'class-validator';
+import { Type } from 'class-transformer';
 import { EventStatus } from '@prisma/client';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 
@@ -27,4 +28,14 @@ export class GetEventsDto extends PaginationDto {
   @IsOptional()
   @IsDateString()
   toDate?: string;
+
+  @ApiPropertyOptional({
+    example: false,
+    description:
+      'false/omitted → default list (archived events hidden). true → only archived events.',
+  })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  archived?: boolean;
 }

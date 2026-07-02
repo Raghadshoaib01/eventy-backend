@@ -21,6 +21,8 @@ import { AdminUseresService } from './admin-useres.service';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { GetAllBookingsDto } from './dto/get-all-bookings.dto';
 import { BlockAccountDto } from './dto/block-account.dto';
+import { ListUsersQueryDto } from './dto/list-users-query.dto';
+import { ListProvidersQueryDto } from './dto/list-providers-query.dto';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -37,9 +39,36 @@ export class AdminUsersController {
     private readonly adminUsersService: AdminUseresService,
   ) {}
 
+  @Get('users')
+  @ApiOperation({
+    summary: 'List users with optional status filter',
+    description: 'Paginated list of customer accounts. Filter with ?status=active|blocked|pending.',
+  })
+  @ApiResponse({ status: 200, description: 'Users retrieved successfully' })
+  getUsers(@Query() query: ListUsersQueryDto) {
+    return this.adminUsersService.getUsers(query);
+  }
+
+  @Get('providers')
+  @ApiOperation({
+    summary: 'List service providers with optional status filter',
+    description:
+      'Paginated list of providers. Filter with ?status=pending|approved|rejected|active|blocked.',
+  })
+  @ApiResponse({ status: 200, description: 'Providers retrieved successfully' })
+  getProviders(@Query() query: ListProvidersQueryDto) {
+    return this.adminUsersService.getProviders(query);
+  }
+
+  /**
+   * @deprecated Use GET /admin-users/providers?status=pending instead.
+   * Kept as a thin wrapper for backward compatibility.
+   */
   @Get('providers/pending')
   @ApiOperation({
-    summary: 'Get pending provider applications',
+    summary: '[Deprecated] Get pending provider applications',
+    description: 'Deprecated — use GET /admin-users/providers?status=pending instead.',
+    deprecated: true,
   })
   @ApiResponse({
     status: 200,

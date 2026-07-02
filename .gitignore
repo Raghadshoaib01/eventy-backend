@@ -64,3 +64,6 @@ firebase/*.json
 **/firebase/*.json
 *service-account*.json
 *firebase-adminsdk*.json
+
+# .md files 
+*.md

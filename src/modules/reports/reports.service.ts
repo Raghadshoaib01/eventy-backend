@@ -314,12 +314,130 @@ export class ReportsService {
       this.prisma.auditLog.count(),
     ]);
 
+    const labels = await this.resolveEntityLabels(items);
+
+    const enrichedItems = items.map((item) => ({
+      id: item.id,
+      action: item.action,
+      entity: item.entity,
+      entityId: item.entityId,
+      entityLabel:
+        item.entityId != null
+          ? (labels.get(`${item.entity}:${item.entityId}`) ?? null)
+          : null,
+      performedBy: item.user
+        ? { id: item.user.id, fullName: item.user.fullName, role: item.user.role }
+        : { id: null, fullName: 'System', role: null },
+      createdAt: item.createdAt,
+    }));
+
     return {
       message: 'Recent activity retrieved successfully',
       data: {
-        items,
+        items: enrichedItems,
         meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       },
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Batch-resolves entityId -> human-readable label per entity type.
+  // One query per distinct entity type in the page (not per row),
+  // so a 20-row page costs at most ~6 extra queries regardless of size.
+  // ─────────────────────────────────────────────────────────────
+  private async resolveEntityLabels(
+    items: { entity: string; entityId: string | null }[],
+  ): Promise<Map<string, string>> {
+    const idsByEntity = new Map<string, Set<string>>();
+    for (const item of items) {
+      if (!item.entityId) continue;
+      if (!idsByEntity.has(item.entity)) idsByEntity.set(item.entity, new Set());
+      idsByEntity.get(item.entity)!.add(item.entityId);
+    }
+
+    const labels = new Map<string, string>();
+    const setLabel = (entity: string, id: string, label: string) =>
+      labels.set(`${entity}:${id}`, label);
+
+    await Promise.all(
+      Array.from(idsByEntity.entries()).map(async ([entity, idSet]) => {
+        const ids = Array.from(idSet);
+
+        switch (entity) {
+          case 'User': {
+            const rows = await this.prisma.user.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, fullName: true },
+            });
+            rows.forEach((r) => setLabel(entity, r.id, r.fullName));
+            break;
+          }
+          case 'ServiceProvider': {
+            const rows = await this.prisma.serviceProvider.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, businessName: true },
+            });
+            rows.forEach((r) => setLabel(entity, r.id, r.businessName));
+            break;
+          }
+          case 'Event': {
+            const rows = await this.prisma.event.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, name: true },
+            });
+            rows.forEach((r) => setLabel(entity, r.id, r.name));
+            break;
+          }
+          case 'Service': {
+            const rows = await this.prisma.service.findMany({
+              where: { id: { in: ids } },
+              select: {
+                id: true,
+                serviceType: { select: { name: true } },
+                provider: { select: { businessName: true } },
+              },
+            });
+            rows.forEach((r) =>
+              setLabel(
+                entity,
+                r.id,
+                `${r.serviceType?.name ?? 'Service'} — ${r.provider?.businessName ?? 'Unknown provider'}`,
+              ),
+            );
+            break;
+          }
+          case 'SubService': {
+            const rows = await this.prisma.subService.findMany({
+              where: { id: { in: ids } },
+              select: { id: true, name: true },
+            });
+            rows.forEach((r) => setLabel(entity, r.id, r.name));
+            break;
+          }
+          case 'Booking': {
+            const rows = await this.prisma.booking.findMany({
+              where: { id: { in: ids } },
+              select: {
+                id: true,
+                service: { select: { serviceType: { select: { name: true } } } },
+                customer: { select: { fullName: true } },
+              },
+            });
+            rows.forEach((r) =>
+              setLabel(
+                entity,
+                r.id,
+                `${r.service?.serviceType?.name ?? 'Booking'} for ${r.customer?.fullName ?? 'Unknown customer'}`,
+              ),
+            );
+            break;
+          }
+          // Unrecognized/future entity types simply get no label (entityLabel: null)
+          // instead of throwing — keeps this feed resilient to new @Audit() usages.
+        }
+      }),
+    );
+
+    return labels;
   }
 }

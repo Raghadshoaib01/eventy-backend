@@ -1,10 +1,18 @@
 // src/modules/admin/admin-useres.service.ts
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, Prisma } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { EngagementService } from 'src/shared/services/engagement.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
+import { ListUsersQueryDto, UserListStatus } from './dto/list-users-query.dto';
+import { ListProvidersQueryDto, ProviderListStatus } from './dto/list-providers-query.dto';
+
+const USER_LIST_STATUS_MAP: Record<UserListStatus, 'ACTIVE' | 'SUSPENDED' | 'PENDING'> = {
+  [UserListStatus.ACTIVE]: 'ACTIVE',
+  [UserListStatus.BLOCKED]: 'SUSPENDED',
+  [UserListStatus.PENDING]: 'PENDING',
+};
 
 @Injectable()
 export class AdminUseresService {
@@ -148,15 +156,81 @@ export class AdminUseresService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // GET /admin-users/providers/pending
+  // GET /admin-users/users?status=active|blocked|pending
   // ─────────────────────────────────────────────────────────────
-  async getPendingProviders(paginationDto: PaginationDto) {
-    const { page = 1, limit = 10, order = 'desc' } = paginationDto;
+  async getUsers(query: ListUsersQueryDto) {
+    const { page = 1, limit = 10, order = 'desc', status } = query;
     const skip = (page - 1) * limit;
+
+    const where: Prisma.UserWhereInput = {
+      role: 'CUSTOMER',
+      deletedAt: null,
+      ...(status ? { status: USER_LIST_STATUS_MAP[status] } : {}),
+    };
+
+    const [users, total] = await this.prisma.$transaction([
+      this.prisma.user.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: order },
+        select: {
+          id: true,
+          fullName: true,
+          email: true,
+          phoneNumber: true,
+          profileImage: true,
+          locationName: true,
+          status: true,
+          emailVerified: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    return {
+      message: 'Users retrieved successfully',
+      data: {
+        items: users,
+        meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+      },
+    };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // GET /admin-users/providers?status=pending|approved|rejected|active|blocked
+  // Replaces the old providers/pending-only endpoint; see getPendingProviders()
+  // below for the deprecated, backward-compatible wrapper.
+  // ─────────────────────────────────────────────────────────────
+  async getProviders(query: ListProvidersQueryDto) {
+    const { page = 1, limit = 10, order = 'desc', status } = query;
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.ServiceProviderWhereInput = {};
+    switch (status) {
+      case ProviderListStatus.PENDING:
+        where.approvalStatus = 'PENDING';
+        break;
+      case ProviderListStatus.APPROVED:
+        where.approvalStatus = 'APPROVED';
+        break;
+      case ProviderListStatus.REJECTED:
+        where.approvalStatus = 'REJECTED';
+        break;
+      case ProviderListStatus.ACTIVE:
+        where.approvalStatus = 'APPROVED';
+        where.user = { status: 'ACTIVE' };
+        break;
+      case ProviderListStatus.BLOCKED:
+        where.user = { status: 'SUSPENDED' };
+        break;
+      // no status -> no filter, return providers in every state
+    }
 
     const [providers, total] = await this.prisma.$transaction([
       this.prisma.serviceProvider.findMany({
-        where: { approvalStatus: 'PENDING' },
+        where,
         skip,
         take: limit,
         orderBy: { user: { createdAt: order } },
@@ -169,6 +243,7 @@ export class AdminUseresService {
               phoneNumber: true,
               profileImage: true,
               locationName: true,
+              status: true,
               emailVerified: true,
               createdAt: true,
             },
@@ -183,16 +258,26 @@ export class AdminUseresService {
           },
         },
       }),
-      this.prisma.serviceProvider.count({ where: { approvalStatus: 'PENDING' } }),
+      this.prisma.serviceProvider.count({ where }),
     ]);
 
     return {
-      message: 'Pending providers retrieved successfully',
+      message: 'Providers retrieved successfully',
       data: {
         items: providers,
         meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       },
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // GET /admin-users/providers/pending (deprecated)
+  // Thin wrapper kept for backward compatibility with existing frontend
+  // calls; delegates to the generic getProviders() with status forced
+  // to "pending". New integrations should call GET /admin-users/providers?status=pending.
+  // ─────────────────────────────────────────────────────────────
+  async getPendingProviders(paginationDto: PaginationDto) {
+    return this.getProviders({ ...paginationDto, status: ProviderListStatus.PENDING });
   }
 
   // ─────────────────────────────────────────────────────────────

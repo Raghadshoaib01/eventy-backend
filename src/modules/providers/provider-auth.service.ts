@@ -148,14 +148,14 @@ export class ProviderAuthService {
 
     // 6. إرسال OTP
     const otpCode = await this.otpService.sendOtp(dto.email);
-    const isDev = process.env.NODE_ENV !== 'production';
+    //const isDev = process.env.NODE_ENV !== 'production';
 
     return {
       message:
         'Registration successful. Please verify your email with the OTP sent.',
       data: {
         email: dto.email,
-        ...(isDev && { otpCode }),
+         otpCode,
       },
     };
   }

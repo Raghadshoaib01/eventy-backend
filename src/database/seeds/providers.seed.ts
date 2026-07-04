@@ -36,6 +36,7 @@ interface SubServiceDef {
   pricePerUnit: number;
   unitType: string;
   dailyCapacity: number;
+  mediaUrls?: string[];
 }
 
 interface ServiceDef {
@@ -43,13 +44,14 @@ interface ServiceDef {
   description: string;
   eventTypes: EventType[];
   isPackaged?: boolean;
+  serviceLogo?:string;
   minCapacity?: number;
   maxCapacity?: number;
   price?: number;
   availability: AvailabilityBlock[];
   subServices?: SubServiceDef[];
   /** Optional sample media files */
-  mediaUrls?: { url: string; fileType: FileType; publicId: string }[];
+  fileUrls?: { url: string; fileType: FileType; publicId: string }[];
 }
 
 interface ProviderDef {
@@ -57,6 +59,7 @@ interface ProviderDef {
   email: string;
   phone: string;
   locationName: string;
+  profileImage?:string;
   latitude: number;
   longitude: number;
   businessName: string;
@@ -76,6 +79,7 @@ const PROVIDERS: ProviderDef[] = [
     email: 'anas@nabaah.com',
     phone: '+962791100001',
     locationName: 'Amman, Jordan',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1777143261/eventy/profiles/hrqupb0ib7lmusyazmhd.jpg',
     latitude: 31.9539,
     longitude: 35.9106,
     businessName: 'NABAAH Catering',
@@ -86,6 +90,17 @@ const PROVIDERS: ProviderDef[] = [
     services: [
       {
         typeName: 'FOOD',
+        serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1783165071/eventy/services/jow8wiibvcwjys6tprwe.jpg',
+        fileUrls:[
+          {url:'https://res.cloudinary.com/dchobrz74/video/upload/v1783167905/v1_bshbkf.mp4',
+          fileType:FileType.VIDEO ,
+          publicId:'v1_bshbkf' ,
+          },
+          {
+        url:'https://res.cloudinary.com/dchobrz74/image/upload/v1783165071/eventy/services/jow8wiibvcwjys6tprwe.jpg',
+          fileType:FileType.IMAGE ,
+          publicId:'eventy/services/jow8wiibvcwjys6tprwe' ,}
+        ],
         description:
           'Premium catering for weddings, graduations, engagements, and all occasions.',
         eventTypes: [
@@ -129,6 +144,11 @@ const PROVIDERS: ProviderDef[] = [
             pricePerUnit: 18.0,
             unitType: 'ITEM',
             dailyCapacity: 500,
+            mediaUrls: [
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165856/7_ybkl5x.jpg',
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165841/4_gvf85u.jpg',
+              'https://res.cloudinary.com/dchobrz74/video/upload/v1783167905/v1_bshbkf.mp4'
+            ],
           },
           {
             name: 'Grilled Meat Station',
@@ -150,6 +170,10 @@ const PROVIDERS: ProviderDef[] = [
             pricePerUnit: 150.0,
             unitType: 'ITEM',
             dailyCapacity: 10,
+            mediaUrls: [
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165857/10_esxjyp.jpg',
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165852/8_jp8vs8.jpg',
+            ],
           },
         ],
       },
@@ -807,7 +831,7 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
           fullName: def.fullName,
           email: def.email,
           phoneNumber: def.phone,
-          profileImage:'xcvbn',
+          profileImage:def.profileImage ?? null,
           passwordHash,
           role: UserRole.PROVIDER,
           status: AccountStatus.ACTIVE,
@@ -885,6 +909,7 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
             serviceTypeId: serviceType.id,
             description: svcDef.description,
             approvalStatus: 'ACTIVE',
+            serviceLogo:svcDef.serviceLogo ?? null,
             isCompleted: true,
             isPackaged: svcDef.isPackaged ?? false,
             minCapacity: svcDef.minCapacity,
@@ -893,6 +918,15 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
             eventTypes: {
               create: svcDef.eventTypes.map((et) => ({ eventType: et })),
             },
+            files: svcDef.fileUrls
+              ? {
+                  create: svcDef.fileUrls.map((f) => ({
+                    fileUrl: f.url,
+                    fileType: f.fileType,
+                    publicId: f.publicId,
+                  })),
+                }
+              : undefined,
           },
         });
         console.log(`    ✅ Service [${svcDef.typeName}]:`, service.id);
@@ -931,6 +965,14 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
                 unitType: sub.unitType,
                 dailyCapacity: sub.dailyCapacity,
                 isAvailable: true,
+                media: sub.mediaUrls
+                  ? {
+                      create: sub.mediaUrls.map((url) => ({
+                        url,
+                        type: /\.(mp4|mov|webm)$/i.test(url) ? FileType.VIDEO : FileType.IMAGE,
+                      })),
+                    }
+                  : undefined,
               },
             });
           }

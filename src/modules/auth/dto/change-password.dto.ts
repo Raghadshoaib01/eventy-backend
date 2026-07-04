@@ -8,12 +8,12 @@ import {
 } from 'class-validator';
 
 export class ChangePasswordDto {
-  @ApiProperty({ example: '********' })
+  @ApiProperty({ example: 'Eventy@123456' })
   @IsString()
   @IsNotEmpty()
   oldPassword: string;
 
-  @ApiProperty({ example: '********' })
+  @ApiProperty({ example: 'Eventy@123456' })
   //@IsStrongPassword()
   @IsString()
   @MinLength(8)

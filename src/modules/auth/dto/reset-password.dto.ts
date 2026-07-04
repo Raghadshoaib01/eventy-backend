@@ -20,7 +20,7 @@ export class ConfirmResetPasswordDto {
   @Length(6, 6)
   code: string;
 
-  @ApiProperty({ example: '********' })
+  @ApiProperty({ example: 'Eventy@123456' })
   //@IsStrongPassword()
   @IsString()
   @MinLength(8)

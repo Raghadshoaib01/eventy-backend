@@ -632,7 +632,7 @@ const PROVIDERS: ProviderDef[] = [
           EventType.CONFERENCE,
           EventType.ALL_EVENTS,
         ],
-        isPackaged: true,
+        isPackaged: false,
         minCapacity: 100,
         maxCapacity: 800,
         price: 2500.0,
@@ -677,7 +677,7 @@ const PROVIDERS: ProviderDef[] = [
           EventType.BIRTHDAY,
           EventType.ENGAGEMENT,
         ],
-        isPackaged: true,
+        isPackaged: false,
         minCapacity: 50,
         maxCapacity: 400,
         price: 1500.0,
@@ -729,7 +729,7 @@ const PROVIDERS: ProviderDef[] = [
           EventType.CONFERENCE,
           EventType.ALL_EVENTS,
         ],
-        isPackaged: true,
+        isPackaged: false,
         price: 800.0,
         availability: [
           {
@@ -768,7 +768,7 @@ const PROVIDERS: ProviderDef[] = [
           EventType.BIRTHDAY,
           EventType.OTHER,
         ],
-        isPackaged: true,
+        isPackaged: false,
         price: 450.0,
         availability: [
           {
@@ -807,6 +807,7 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
           fullName: def.fullName,
           email: def.email,
           phoneNumber: def.phone,
+          profileImage:'xcvbn',
           passwordHash,
           role: UserRole.PROVIDER,
           status: AccountStatus.ACTIVE,

@@ -27,7 +27,7 @@ export class RegisterDto {
   @Matches(/^\+?[0-9]{7,15}$/, { message: 'Invalid phone number' })
   phoneNumber: string;
 
-  @ApiProperty({ example: '********' })
+  @ApiProperty({ example: 'Eventy@13456' })
   //@IsStrongPassword()
   @IsString()
   @MinLength(8, { message: 'Password must be at least 8 characters' })

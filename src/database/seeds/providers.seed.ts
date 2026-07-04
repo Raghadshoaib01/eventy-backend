@@ -963,6 +963,7 @@ export async function seedProviders(prisma: PrismaClient): Promise<SeededProvide
                 description: sub.description,
                 pricePerUnit: sub.pricePerUnit,
                 unitType: sub.unitType,
+                approvalStatus:'ACTIVE',
                 dailyCapacity: sub.dailyCapacity,
                 isAvailable: true,
                 media: sub.mediaUrls

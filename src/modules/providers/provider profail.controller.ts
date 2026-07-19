@@ -5,6 +5,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   UseInterceptors,
@@ -21,6 +22,7 @@ import {
   ApiBearerAuth,
   ApiConsumes,
   ApiParam,
+  ApiQuery,
   ApiBody,
 } from '@nestjs/swagger';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -30,6 +32,8 @@ import {
   UpdateProviderProfileDto,
   UpdateBankAccountDto,
 } from '../providers/dto/Update provider profile.dto';
+import { GetProviderServicesDto } from '../providers/dto/get-provider-services.dto';
+import { ServiceStatus } from '@prisma/client';
 
 @ApiTags('Provider Auth')
 @Controller('provider/profile')
@@ -92,11 +96,17 @@ export class ProviderProfileController {
   @Get('services')
   @ApiOperation({
     summary: 'Get all services for this provider',
-    description: 'Returns all services with details, media, and sub-services',
+    description:
+      'Returns the authenticated provider\'s services with details, media, and sub-services. Optionally filter by status and/or service type.',
   })
+  @ApiQuery({ name: 'status', required: false, enum: ServiceStatus, description: 'Filter by service approval status' })
+  @ApiQuery({ name: 'serviceTypeId', required: false, type: String, description: 'Filter by service type ID' })
   @ApiResponse({ status: 200, description: 'Services retrieved successfully' })
-  async getServices(@Request() req) {
-    return this.providerProfileService.getProviderServices(req.user.sub);
+  async getServices(@Request() req, @Query() query: GetProviderServicesDto) {
+    return this.providerProfileService.getProviderServices(req.user.sub, {
+      status: query.status,
+      serviceTypeId: query.serviceTypeId,
+    });
   }
 
   // // ========== 5. Get Single Service by ID ==========

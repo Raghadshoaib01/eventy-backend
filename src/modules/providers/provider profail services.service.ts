@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import { ServiceStatus } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { UpdateProviderProfileDto, UpdateBankAccountDto } from '../providers/dto/Update provider profile.dto';
@@ -208,8 +209,12 @@ async updateBankAccount(
 
   /**
    * الحصول على جميع الخدمات للـ Provider
+   * يدعم الفلترة الاختيارية حسب الحالة (status) ونوع الخدمة (serviceTypeId)
    */
-  async getProviderServices(userId: string) {
+  async getProviderServices(
+    userId: string,
+    filters?: { status?: ServiceStatus; serviceTypeId?: string },
+  ) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { provider: true },
@@ -220,7 +225,11 @@ async updateBankAccount(
     }
 
     const services = await this.prisma.service.findMany({
-      where: { providerId: user.provider.id },
+      where: {
+        providerId: user.provider.id,
+        ...(filters?.status && { approvalStatus: filters.status }),
+        ...(filters?.serviceTypeId && { serviceTypeId: filters.serviceTypeId }),
+      },
       include: {
         files: true,
         availability: {

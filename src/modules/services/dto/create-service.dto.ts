@@ -15,124 +15,115 @@ import {
 import { plainToInstance, Transform, Type } from 'class-transformer';
 import { EventType } from '@prisma/client';
 import { ServiceAvailabilityDto, SubServiceDto } from './Complete service details.dto';
-
-class TimeSlotDto {
-  // ✅ نفس Prisma
-  @ApiProperty({ example: '09:00' })
-  @IsNotEmpty()
-  @IsString()
-  fromTime: string;
-
-  @ApiProperty({ example: '12:00' })
-  @IsNotEmpty()
-  @IsString()
-  toTime: string;
-
-  @ApiProperty({ example: 1 })
-  @IsInt()
-  @Min(1)
-  capacity: number;
-}
+import { BadRequestException } from '@nestjs/common';
 
 export class CreateServiceDto {
-  // ✅ UUID مطابق Prisma
+  // 
   @ApiProperty({ example: 'uuid-of-service-type' })
   @IsUUID()
   serviceTypeId: string;
 
-  // ✅ صحيح
+  // 
   @ApiProperty({
     enum: EventType,
     isArray: true,
     example: [EventType.WEDDING, EventType.ENGAGEMENT],
   })
+  @Transform(({ value }) => {
+  if (typeof value === 'string') {
+    return value
+      .split(',')
+      .map(v => v.trim())
+      .filter(Boolean);
+  }
+  return value;
+})
   @IsArray()
   @IsEnum(EventType, { each: true })
   eventTypes: EventType[];
 
-  @ApiProperty({ example: 'Premium catering service', required: false })
-  @IsOptional()
+  @ApiProperty({ example: 'Premium catering service', required: true, })
+  @IsNotEmpty()
   @IsString()
   description?: string;
 
-  @ApiProperty({
-  type: [ServiceAvailabilityDto],
-  description: 'Availability schedule per day',
-  })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ServiceAvailabilityDto)
-  availability: ServiceAvailabilityDto[];
-
-  @ApiProperty({ example: 50, required: false })
+  @ApiProperty({ example: 50, required: false,
+    description: 'For HALL/SOUND only required',
+   })
+   @Type(() => Number)
   @IsOptional()
   @IsInt()
   @Min(1)
   minCapacity?: number;
 
-  @ApiProperty({ example: 500, required: false })
+  @ApiProperty({ example: 500, required: false,
+    description: 'For HALL/SOUND only required',
+   })
+   @Type(() => Number)
   @IsOptional()
   @IsInt()
   @Min(1)
   maxCapacity?: number;
 
-  @ApiProperty({ example: 2000, required: false })
+  @ApiProperty({ example: 2000, required: false,
+    description: 'For HALL/SOUND only required',
+   })
   @IsOptional()
-  @IsNumber()
+  @Type(() => Number)
   @Min(0)
   price?: number;
-
-  // src/modules/services/dto/Complete service details.dto.ts
-
-// أضيفي في نهاية CompleteServiceDetailsDto وCompleteHallSoundDetailsDto:
-@ApiPropertyOptional({ example: 'Amman, Jordan' })
-@IsOptional()
-@IsString()
-locationName?: string;
-
-@ApiPropertyOptional({ example: 31.9539 })
-@IsOptional()
-@Type(() => Number)
-@IsNumber()
-latitude?: number;
-
-@ApiPropertyOptional({ example: 35.9106 })
-@IsOptional()
-@Type(() => Number)
-@IsNumber()
-longitude?: number;
-
 
   @ApiProperty({
     type: SubServiceDto,
     description: 'Single sub-service object',
+    required: false,
   })
+  @IsOptional()
   @Transform(({ value }) => {
-  if (typeof value === 'string') {
-    return plainToInstance(SubServiceDto, JSON.parse(value));
+    if (value === undefined || value === null || value === '') {
+    return undefined;
   }
-  return value;
+  if (typeof value === 'string') {
+    try {
+    return plainToInstance(SubServiceDto, JSON.parse(value));
+ } catch {
+    throw new BadRequestException(
+        'subService must be a valid JSON object',
+      );
+    }
+  }  return value;
 })
 @ValidateNested()
 @Type(() => SubServiceDto)
 subService: SubServiceDto;
 
-// ✅ مهم جدًا: ملفات service
-  @ApiPropertyOptional({
+  
+  @ApiProperty({
     type: 'string',
     format: 'binary',
-    isArray: true,
-    description: 'Main service media (1 or more files)',
+    required: false,
   })
-  serviceMedia?: any[];
+  businessFile?: any;
 
+  @ApiProperty({
+    type: 'string',
+    format: 'binary',
+    required: false,
+  })
+  serviceLogo?: any;
+  
   // ✅ مهم جدًا: ملفات sub service
+  @IsOptional()
   @ApiPropertyOptional({
     type: 'string',
     format: 'binary',
     isArray: true,
     description: 'Sub service media files',
   })
+  @Transform(({ value }) => {
+  if (value === 'string') return undefined;
+  return value;
+})
   subServiceMedia?: any[];
 
 }

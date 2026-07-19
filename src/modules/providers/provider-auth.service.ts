@@ -125,7 +125,7 @@ export class ProviderAuthService {
                 isCompleted: false, // سيتم إكمالها بعد القبول
                 approvalStatus: 'PENDING_DETAILS',
                 serviceLogo: serviceLogoUrl,
-                businessFile: serviceLogoUrl,
+                businessFile: businessFileUrl,
 
 
                 // For HALL/SOUND: نحفظ القيم الأولية

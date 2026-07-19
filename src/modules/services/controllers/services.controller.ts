@@ -89,14 +89,9 @@ export class ServicesController {
   @Post()
   @UseInterceptors(
   FileFieldsInterceptor([
-    {
-      name: 'serviceMedia',
-      maxCount: 10,
-    },
-    {
-      name: 'subServiceMedia',
-      maxCount: 10,
-    },
+     { name: 'serviceLogo', maxCount: 1 },
+    { name: 'businessFile', maxCount: 1 },
+    {name: 'subServiceMedia',maxCount: 10},
   ]),
 )
 @ApiConsumes('multipart/form-data')
@@ -110,14 +105,17 @@ export class ServicesController {
 
   @UploadedFiles()
   files: {
-    serviceMedia?: Express.Multer.File[];
+    serviceLogo?: Express.Multer.File[];
+    businessFile?: Express.Multer.File[];
     subServiceMedia?: Express.Multer.File[];
   },
 ) {
   return this.servicesService.createService(
     req.user.sub,
     dto,
-    files,
+    files?.serviceLogo?.[0],
+    files?.businessFile?.[0],
+    files?.subServiceMedia,
   );
 }
    // ========================

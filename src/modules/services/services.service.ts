@@ -26,153 +26,152 @@ export class ServicesService {
   // ========================
   // ➕ Create Service
   // ========================
-  async createService(userId: string, dto: CreateServiceDto,
-     files: {
-    serviceMedia?: Express.Multer.File[];
-    subServiceMedia?: Express.Multer.File[];
-            },
-    ) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { provider: true },
+// src/modules/services/services.service.ts
+
+// ========================
+// ➕ Create Service
+// ========================
+async createService(
+  userId: string,
+  dto: CreateServiceDto,
+  serviceLogo?: Express.Multer.File,
+  businessFile?: Express.Multer.File,
+  subServiceMedia?: Express.Multer.File[],
+) {
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: { provider: true },
+  });
+
+  if (!user || !user.provider) {
+    throw new NotFoundException('Provider not found');
+  }
+
+  // ✅ نجلب نوع الخدمة لتحديد HALL/SOUND vs بقية الأنواع
+  const serviceType = await this.prisma.serviceType.findUnique({
+    where: { id: dto.serviceTypeId },
+    select: { id: true, name: true },
+  });
+
+  if (!serviceType) {
+    throw new NotFoundException('Service type not found');
+  }
+
+  const AUTO_SUBSERVICE_TYPES = ['HALL', 'SOUND'];
+  const isAutoType = AUTO_SUBSERVICE_TYPES.includes(
+    serviceType.name.toUpperCase(),
+  );
+
+  // HALL/SOUND: تُتجاهل الخدمات الفرعية تماماً.
+  // غير ذلك: نُنشئ فرعية فقط إن أُرسلت، وإلا نتركها للمرحلة الثانية بعد القبول.
+  const subServiceCreate =
+    !isAutoType && dto.subService
+      ? {
+          name: dto.subService.name,
+          description: dto.subService.description,
+          pricePerUnit: dto.subService.pricePerUnit,
+          unitType: dto.subService.unitType,
+          dailyCapacity: dto.subService.dailyCapacity,
+        }
+      : undefined;
+
+  // ==========================================================
+  // 1) كل عمليات الرفع تتم أولاً — خارج الـ transaction
+  // ==========================================================
+  let serviceLogoUrl: string | null = null;
+  if (serviceLogo) {
+    const uploaded = await this.cloudinaryService.upload(serviceLogo, {
+      folder: 'eventy/services',
     });
+    serviceLogoUrl = uploaded.url;
+  }
 
-    if (!user || !user.provider) {
-      throw new NotFoundException('Provider not found');
+  let businessFileUrl: string | null = null;
+  if (businessFile) {
+    const uploaded = await this.cloudinaryService.upload(businessFile, {
+      folder: 'eventy/business-files',
+    });
+    businessFileUrl = uploaded.url;
+  }
+
+  // نرفع وسائط الفرعية فقط إن كنا فعلاً سننشئ خدمة فرعية
+  const uploadedSubServiceMedia: { url: string; publicId: string }[] = [];
+  if (subServiceCreate && subServiceMedia?.length) {
+    for (const file of subServiceMedia) {
+      const uploaded = await this.cloudinaryService.upload(file, {
+        folder: 'eventy/sub-services',
+      });
+      uploadedSubServiceMedia.push({
+        url: uploaded.url,
+        publicId: uploaded.publicId,
+      });
     }
+  }
 
-    const service = await this.prisma.service.create({
+  // ==========================================================
+  // 2) كل كتابات DB داخل transaction واحدة (ذرّية)
+  // ==========================================================
+  const service = await this.prisma.$transaction(async (tx) => {
+    const created = await tx.service.create({
       data: {
         providerId: user.provider.id,
         serviceTypeId: dto.serviceTypeId,
         description: dto.description,
-
         minCapacity: dto.minCapacity,
         maxCapacity: dto.maxCapacity,
+        serviceLogo: serviceLogoUrl,
+        businessFile: businessFileUrl,
         price: dto.price,
-
-        ...(dto.locationName !== undefined && { locationName: dto.locationName }),
-        ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
-        ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
         eventTypes: {
           create: dto.eventTypes.map((type) => ({
             eventType: type,
           })),
         },
-         availability: {
-          create: dto.availability.map((day) => ({
-            workFromTime: day.workFromTime,
-            workToTime: day.workToTime,
-            capacity: day.capacity,
-            hasSlots: day.hasSlots ?? false,
-            workingDays: {
-            create: { dayOfWeek: day.dayOfWeek },
-          },
-            timeSlots:
-              day.timeSlots?.length
-                ? {
-                    create: day.timeSlots.map((slot) => ({
-                      fromTime: slot.fromTime,
-                      toTime: slot.toTime,
-                      capacity: slot.capacity,
-                    })),
-                  }
-                : undefined,
-          })),
-        },
-                
-        subServices: {
-          create: {
-            name: dto.subService.name,
-
-            description: dto.subService.description,
-
-            pricePerUnit: dto.subService.pricePerUnit,
-
-            unitType: dto.subService.unitType,
-
-            dailyCapacity: dto.subService.dailyCapacity,
-          },
-        },
-         
-              },
+        subServices: subServiceCreate
+          ? { create: subServiceCreate }
+          : undefined,
+      },
       include: {
-      serviceType:  { select: { name: true } },
-      eventTypes:   { select: { eventType: true } },
+        serviceType: { select: { name: true } },
+        eventTypes: { select: { eventType: true } },
         availability: {
-          include: { workingDays: true,timeSlots: true },
+          include: { workingDays: true, timeSlots: true },
         },
         subServices: true,
       },
     });
 
-    for (const file of files.serviceMedia ?? []) {
+    // وسائط الفرعية فقط إن وُجدت فرعية ووصلت ملفات
+    const subService = created.subServices[0];
+    if (subService && uploadedSubServiceMedia.length) {
+      await tx.subServiceMedia.createMany({
+        data: uploadedSubServiceMedia.map((m) => ({
+          subServiceId: subService.id,
+          url: m.url,
+          publicId: m.publicId,
+          type: FileType.IMAGE,
+        })),
+      });
+    }
 
-      const uploaded = await this.cloudinaryService.upload(
-        file,
-        {
-          folder: 'eventy/services',
-        },
-      );
-
-       await this.prisma.serviceDetailFile.create({
-    data: {
-
-      serviceId: service.id,
-
-      fileUrl: uploaded.url,
-
-      publicId: uploaded.publicId,
-
-      fileType: FileType.IMAGE,
-    },
-  });
-}
-
-  const subService = service.subServices[0];
-
-  for (const file of files.subServiceMedia ?? []) {
-
-    const uploaded =
-      await this.cloudinaryService.upload(
-        file,{
-        folder: 'eventy/sub-services',}
-      );
-
-    await this.prisma.subServiceMedia.create({
-
-      data: {
-
-        subServiceId: subService.id,
-
-        url: uploaded.url,
-
-        publicId: uploaded.publicId,
-
-        type: FileType.IMAGE,
-
-      },
-
-    });
-
-  }
-
-    await this.prisma.serviceChangeRequest.create({
+    await tx.serviceChangeRequest.create({
       data: {
         targetType: 'SERVICE',
-        targetId: service.id,
+        targetId: created.id,
         requestType: 'CREATE',
         payload: dto as unknown as object,
         status: 'PENDING',
       },
     });
 
-    return {
-      message: 'Service created successfully and pending approval',
-      data: service,
-    };
-  }
+    return created;
+  });
 
+  return {
+    message: 'Service created successfully and pending approval',
+    data: service,
+  };
+}
   // ========================
   // 📋 Get My Services
   // ========================

@@ -119,6 +119,7 @@ export class SubServiceDto{
   @IsNotEmpty()
   pricePerUnit: number;
 
+  // todo: make a validation to spicify the unit type for each service type.
   @ApiProperty({
     example: 'ITEM',
     enum: ['ITEM', 'SESSION'],

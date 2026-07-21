@@ -52,6 +52,30 @@ enum NotificationType {
   PAYMENT_CONFIRMED
   EVENT_CANCELLED
   GENERAL
+
+  // Packages (docs/packages-implementation-plan.md §13.7)
+  PACKAGE_APPROVED
+  PACKAGE_REJECTED
+  PACKAGE_CHANGE_APPLIED
+  PACKAGE_SERVICE_REMOVED
+
+  // Discounts (docs/discounts-implementation-plan.md §7)
+  DISCOUNT_CANCELLED
+
+  // Reviews (docs/reviews-implementation-plan.md §6)
+  REVIEW_REPLIED
+
+  // Complaints (docs/complaints-implementation-plan.md §6)
+  COMPLAINT_STATUS_CHANGED
+  COMPLAINT_REPLIED
+
+  // Payments (docs/payments-implementation-plan.md §8)
+  PAYMENT_FAILED
+
+  // Delivery (docs/delivery-implementation-plan.md §6)
+  DELIVERY_OUT_FOR_DELIVERY
+  DELIVERY_COMPLETED
+  DELIVERY_FAILED
 }
 
 enum DeliveryStatus {
@@ -157,15 +181,127 @@ enum ChangeRequestType {
 }
 
 // =======================
+// PACKAGES
+// =======================
+enum PackageStatus {
+  DRAFT
+  PENDING_APPROVAL
+  ACTIVE
+  REJECTED
+  INACTIVE
+}
+
+enum PackagePricingStrategy {
+  FLAT_SUM
+  GUEST_BASED
+}
+
+enum ServicePriceType {
+  FLAT
+  PER_GUEST
+}
+
+enum PackageChangeStatus {
+  PENDING
+  APPLIED
+  CANCELLED
+}
+
+enum PackageBookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+// =======================
+// DISCOUNTS
+// =======================
+enum DiscountScope {
+  SERVICE
+  PACKAGE
+}
+
+enum DiscountOrigin {
+  PROVIDER
+  COMPANY_FUNDED
+}
+
+enum DiscountStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+// =======================
+// FAVORITES
+// =======================
+enum FavoriteTargetType {
+  SERVICE
+  PROVIDER
+  PACKAGE
+}
+
+// =======================
+// COMPLAINTS
+// =======================
+enum ComplaintStatus {
+  PENDING
+  IN_PROGRESS
+  RESOLVED
+  REJECTED
+}
+
+enum ComplaintTargetType {
+  PROVIDER
+  SERVICE
+  BOOKING
+  PACKAGE_BOOKING
+  CUSTOMER
+  GENERAL
+}
+
+// =======================
+// PAYMENTS
+// =======================
+enum PaymentMethod {
+  CASH
+  CARD
+  BANK_TRANSFER
+}
+
+enum PaymentStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  REFUNDED
+  CANCELLED
+}
+
+// =======================
+// DELIVERY
+// =======================
+enum FulfillmentStatus {
+  SCHEDULED
+  OUT_FOR_DELIVERY
+  DELIVERED
+  FAILED
+}
+
+// =======================
 // SERVICE TYPE
 // =======================
 model ServiceType {
-  id          String    @id @default(uuid())
-  name        String    @unique
-  description String?
-  services    Service[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                        String    @id @default(uuid())
+  name                      String    @unique
+  description               String?
+  services                  Service[]
+  isVenue                   Boolean   @default(false)
+  requiresDeliveryByDefault Boolean   @default(false)
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
 }
 
 // =======================
@@ -189,18 +325,24 @@ model User {
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
-  deletedAt     DateTime?
+  deletedAt DateTime?
 
-  customer      Customer?
-  provider      ServiceProvider?
-  bankAccount   BankAccount?
-  refreshTokens RefreshToken[]
-  notifications Notification[]
-  deviceTokens  DeviceToken[]
-  auditLogs     AuditLog[]       @relation("UserAuditLogs")
-  bookings      Booking[]
-  events Event[]
+  customer               Customer?
+  provider               ServiceProvider?
+  bankAccount            BankAccount?
+  refreshTokens          RefreshToken[]
+  notifications          Notification[]
+  deviceTokens           DeviceToken[]
+  auditLogs              AuditLog[]             @relation("UserAuditLogs")
+  bookings               Booking[]
+  events                 Event[]
   reviewedChangeRequests ServiceChangeRequest[] @relation("ChangeRequestReviewer")
+
+  favorites       Favorite[]
+  reviews         Review[]
+  payments        Payment[]
+  packageBookings PackageBooking[]
+  complaints      Complaint[]
 }
 
 model Customer {
@@ -220,8 +362,8 @@ model ServiceProvider {
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   services        Service[]
   bookings        Booking[]
-  blockedSlots BlockedSlot[]
-
+  blockedSlots    BlockedSlot[]
+  packages        Package[]
 }
 
 // =======================
@@ -244,7 +386,7 @@ model Service {
   serviceLogo  String?
 
   approvalStatus ServiceStatus @default(PENDING_APPROVAL)
-  isCompleted Boolean @default(false)
+  isCompleted    Boolean       @default(false)
 
   isPackaged   Boolean @default(false)
   rating       Float   @default(0)
@@ -253,14 +395,22 @@ model Service {
   minCapacity Int?
   maxCapacity Int?
   price       Float?
+  priceType   ServicePriceType @default(FLAT)
+
+  // package-exclusive: set only when isPackaged = true (see docs/packages-implementation-plan.md §2.2)
+  packageId String?
+  package   Package? @relation("PackageExclusiveServices", fields: [packageId], references: [id], onDelete: Cascade)
 
   files        ServiceDetailFile[]
   eventTypes   ServiceEventType[]
   subServices  SubService[]
-  availability ServiceAvailability[] 
+  availability ServiceAvailability[]
   workingDays  ServiceWorkingDay[]
   bookings     Booking[]
   blockedSlots BlockedSlot[]
+  packageItems PackageItem[]
+  discounts    Discount[]
+  reviews      Review[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -274,8 +424,8 @@ model ServiceDetailFile {
   serviceId String
   fileUrl   String
   fileType  FileType
-  publicId  String 
-  service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  publicId  String
+  service   Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   uploadedAt DateTime @default(now())
 }
@@ -301,12 +451,12 @@ model SubService {
   serviceId String
   service   Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
-  name          String
-  description   String?
-  pricePerUnit  Float
-  unitType      String  @default("unit")
-  dailyCapacity Int     @default(1)
-  isAvailable   Boolean @default(false)
+  name           String
+  description    String?
+  pricePerUnit   Float
+  unitType       String        @default("unit")
+  dailyCapacity  Int           @default(1)
+  isAvailable    Boolean       @default(false)
   approvalStatus ServiceStatus @default(PENDING_APPROVAL)
 
   media        SubServiceMedia[]
@@ -336,15 +486,15 @@ model SubServiceMedia {
 // =======================
 model ServiceAvailability {
   id        String @id @default(uuid())
-  serviceId String 
+  serviceId String
 
   service Service @relation(fields: [serviceId], references: [id], onDelete: Cascade)
 
   workFromTime String
   workToTime   String
- capacity Int    @default(1)
+  capacity     Int    @default(1)
 
-  hasSlots     Boolean @default(false)
+  hasSlots Boolean @default(false)
 
   timeSlots   TimeSlot[]
   workingDays ServiceWorkingDay[]
@@ -402,15 +552,19 @@ model Booking {
   timeSlotId String?
   timeSlot   TimeSlot? @relation(fields: [timeSlotId], references: [id], onDelete: SetNull)
 
-  eventId      String?
-  event        Event?   @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  eventId String?
+  event   Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  // set when this booking was created as part of a package purchase (see docs/packages-implementation-plan.md §12.2)
+  packageBookingId String?
+  packageBooking   PackageBooking? @relation(fields: [packageBookingId], references: [id], onDelete: SetNull)
 
   customerNotes   String?
   providerNotes   String?
   rejectionReason String?
 
-  totalAmount Float @default(0)
-  finalAmount  Float?
+  totalAmount Float  @default(0)
+  finalAmount Float?
 
   status BookingStatus @default(PENDING)
 
@@ -427,10 +581,15 @@ model Booking {
 
   items BookingItem[]
 
+  review   Review?
+  payment  Payment?
+  delivery Delivery?
+
   @@index([customerId])
   @@index([serviceId])
   @@index([providerId])
   @@index([eventId])
+  @@index([packageBookingId])
 }
 
 model BookingItem {
@@ -442,11 +601,11 @@ model BookingItem {
   subServiceId String
   subService   SubService @relation(fields: [subServiceId], references: [id], onDelete: Cascade)
 
-  quantity   Int   @default(1)
-  unitPrice  Float
-  finalUnitPrice  Float?
+  quantity       Int    @default(1)
+  unitPrice      Float
+  finalUnitPrice Float?
 
-  totalPrice Float
+  totalPrice      Float
   finalTotalPrice Float?
 
   createdAt DateTime @default(now())
@@ -524,22 +683,23 @@ model AuditLog {
 }
 
 model Event {
-  id             String      @id @default(uuid())
-  customerId     String
-  customer       User        @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  name           String
-  eventType      EventType
-  eventDate      DateTime
-  eventStartTime String
-  eventEndTime   String
-  eventLocation  String?
-  numberOfGuests Int?
-  customerNotes  String?
-  status         EventStatus @default(DRAFT)
-  archivedAt     DateTime?
-  bookings       Booking[]
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
+  id              String           @id @default(uuid())
+  customerId      String
+  customer        User             @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name            String
+  eventType       EventType
+  eventDate       DateTime
+  eventStartTime  String
+  eventEndTime    String
+  eventLocation   String?
+  numberOfGuests  Int?
+  customerNotes   String?
+  status          EventStatus      @default(DRAFT)
+  archivedAt      DateTime?
+  bookings        Booking[]
+  packageBookings PackageBooking[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@index([customerId])
 }
@@ -548,12 +708,12 @@ model Event {
 // SERVICE CHANGE REQUEST
 // =======================
 model ServiceChangeRequest {
-  id          String                   @id @default(uuid())
+  id          String                  @id @default(uuid())
   targetType  ChangeRequestTargetType
   targetId    String
   requestType ChangeRequestType
   payload     Json
-  status      ApprovalStatus           @default(PENDING)
+  status      ApprovalStatus          @default(PENDING)
 
   reviewedBy String?
   reviewer   User?   @relation("ChangeRequestReviewer", fields: [reviewedBy], references: [id], onDelete: SetNull)
@@ -582,4 +742,228 @@ model BlockedSlot {
   @@index([serviceId])
   @@index([providerId])
   @@index([date])
+}
+
+// =======================
+// PACKAGES
+// docs/packages-implementation-plan.md
+// =======================
+model Package {
+  id              String                 @id @default(uuid())
+  providerId      String
+  provider        ServiceProvider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name            String
+  description     String?
+  status          PackageStatus          @default(DRAFT)
+  pricingStrategy PackagePricingStrategy @default(FLAT_SUM)
+  reviewNote      String?
+  reviewedById    String?
+  reviewedAt      DateTime?
+  createdAt       DateTime               @default(now())
+  updatedAt       DateTime               @updatedAt
+
+  exclusiveServices Service[]             @relation("PackageExclusiveServices")
+  attachedItems     PackageItem[]
+  pendingChange     PackageChangeRequest?
+  packageBookings   PackageBooking[]
+  discounts         Discount[]
+
+  @@index([providerId])
+  @@index([status])
+}
+
+model PackageItem {
+  id            String   @id @default(uuid())
+  packageId     String
+  package       Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  serviceId     String
+  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  isRequired    Boolean  @default(true)
+  addedByUserId String
+  createdAt     DateTime @default(now())
+
+  @@unique([packageId, serviceId])
+  @@index([serviceId])
+}
+
+model PackageChangeRequest {
+  id                String              @id @default(uuid())
+  packageId         String              @unique
+  package           Package             @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  payload           Json
+  status            PackageChangeStatus @default(PENDING)
+  requestedByUserId String
+  createdAt         DateTime            @default(now())
+  appliedAt         DateTime?
+}
+
+model PackageBooking {
+  id                    String               @id @default(uuid())
+  packageId             String
+  package               Package              @relation(fields: [packageId], references: [id])
+  customerId            String
+  customer              User                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  eventId               String?
+  event                 Event?               @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  guestCount            Int
+  status                PackageBookingStatus @default(PENDING_PAYMENT)
+  hallPrice             Float
+  optionalServicesTotal Float
+  subtotal              Float
+  discountId            String?
+  discountAmount        Float?
+  totalAmount           Float
+  cancelledAt           DateTime?
+  cancellationReason    String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+
+  selectedItems PackageBookingItem[]
+  bookings      Booking[]
+
+  @@index([packageId])
+  @@index([customerId])
+  @@index([status])
+}
+
+model PackageBookingItem {
+  id               String         @id @default(uuid())
+  packageBookingId String
+  packageBooking   PackageBooking @relation(fields: [packageBookingId], references: [id], onDelete: Cascade)
+  serviceId        String
+  wasRequired      Boolean
+  priceAtBooking   Float
+  createdAt        DateTime       @default(now())
+
+  @@index([packageBookingId])
+}
+
+// =======================
+// DISCOUNTS
+// docs/discounts-implementation-plan.md
+// =======================
+model Discount {
+  id                  String         @id @default(uuid())
+  scope               DiscountScope
+  serviceId           String?
+  service             Service?       @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  packageId           String?
+  package             Package?       @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  origin              DiscountOrigin
+  code                String?        @unique
+  percentOff          Float
+  status              DiscountStatus @default(ACTIVE)
+  needsReconfirmation Boolean        @default(false)
+  startsAt            DateTime?
+  endsAt              DateTime?
+  createdByUserId     String
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  payments Payment[]
+
+  @@index([scope])
+  @@index([status])
+}
+
+// =======================
+// FAVORITES
+// docs/favorites-implementation-plan.md
+// =======================
+model Favorite {
+  id         String             @id @default(uuid())
+  userId     String
+  user       User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targetType FavoriteTargetType
+  targetId   String
+  createdAt  DateTime           @default(now())
+
+  @@unique([userId, targetType, targetId])
+  @@index([userId])
+}
+
+// =======================
+// REVIEWS & RATINGS
+// docs/reviews-implementation-plan.md
+// =======================
+model Review {
+  id            String   @id @default(uuid())
+  bookingId     String   @unique
+  booking       Booking  @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  customerId    String
+  customer      User     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  serviceId     String
+  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  rating        Int
+  comment       String?
+  providerReply String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([serviceId])
+}
+
+// =======================
+// GENERAL COMPLAINTS
+// docs/complaints-implementation-plan.md
+// =======================
+model Complaint {
+  id               String              @id @default(uuid())
+  complainantId    String
+  complainant      User                @relation(fields: [complainantId], references: [id], onDelete: Cascade)
+  targetType       ComplaintTargetType
+  targetId         String?
+  bookingId        String?
+  packageBookingId String?
+  subject          String
+  description      String
+  status           ComplaintStatus     @default(PENDING)
+  adminReply       String?
+  handledByUserId  String?
+  resolvedAt       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([complainantId])
+  @@index([status])
+}
+
+// =======================
+// PAYMENTS
+// docs/payments-implementation-plan.md
+// =======================
+model Payment {
+  id                String        @id @default(uuid())
+  bookingId         String        @unique
+  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  payerId           String
+  payer             User          @relation(fields: [payerId], references: [id], onDelete: Cascade)
+  amount            Float
+  subtotalAmount    Float
+  method            PaymentMethod
+  status            PaymentStatus @default(PENDING)
+  discountId        String?
+  discount          Discount?     @relation(fields: [discountId], references: [id])
+  discountAmount    Float?
+  providerReference String?
+  paidAt            DateTime?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+// =======================
+// DELIVERY
+// docs/delivery-implementation-plan.md
+// =======================
+model Delivery {
+  id          String            @id @default(uuid())
+  bookingId   String            @unique
+  booking     Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status      FulfillmentStatus @default(SCHEDULED)
+  address     String
+  scheduledAt DateTime?
+  deliveredAt DateTime?
+  notes       String?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
 }

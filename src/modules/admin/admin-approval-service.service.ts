@@ -9,6 +9,7 @@ import {
   ApproveProviderJoinDto,
   ApproveServiceDto,
   ApproveSubServiceDto,
+  ApprovePackageDto,
 } from './dto/ApproveProviderJoinDto';
 import { ApprovalStatus } from 'src/shared/Enums/approval-status.enum';
 import {
@@ -18,6 +19,7 @@ import {
   ServiceApprovedPayload,
   ServiceRejectedPayload,
 } from 'src/common/events/domain-events';
+import { PackageStatus } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { ChangeRequestQueryDto } from './dto/change-request-query.dto';
 
@@ -820,4 +822,124 @@ async approveSubServiceUpdate(adminId: string, dto: ApproveSubServiceDto) {
     };
   }
 }
+
+/**
+ * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ * 🔹 Packages: list pending / detail / approve-reject
+   * (docs/packages-implementation-plan.md §5.4)
+   *
+   * Package doesn't route through ServiceChangeRequest — it carries its own
+   * `status` directly, so this is a small self-contained set of methods
+   * rather than another branch of the generic change-request inbox above.
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   */
+  async listPendingPackages(query: { page?: number; limit?: number; status?: PackageStatus }) {
+    // page/limit may arrive as NaN, not undefined — Nest's global
+    // ValidationPipe({transform:true}) coerces an absent, bare
+    // `@Query('page') page?: number` via `Number(undefined)` before this
+    // function ever sees it, so a destructuring default here would never
+    // fire (verified live — see docs/packages-implementation-plan.md
+    // phase-6 test notes). `|| default` catches NaN where `= default` doesn't.
+    const page = query.page || 1;
+    const limit = query.limit || 10;
+    const status = query.status;
+    const skip = (page - 1) * limit;
+
+    const where = { status: status ?? PackageStatus.PENDING_APPROVAL };
+
+    const [items, total] = await this.prisma.$transaction([
+      this.prisma.package.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          provider: { include: { user: { select: { fullName: true } } } },
+          _count: { select: { exclusiveServices: true, attachedItems: true } },
+        },
+      }),
+      this.prisma.package.count({ where }),
+    ]);
+
+    return {
+      message: 'Packages retrieved successfully',
+      data: { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } },
+    };
+  }
+
+  async getPackageForReview(packageId: string) {
+    const pkg = await this.prisma.package.findUnique({
+      where: { id: packageId },
+      include: {
+        provider: { include: { user: { select: { fullName: true } } } },
+        exclusiveServices: { include: { serviceType: true } },
+        attachedItems: { include: { service: { include: { serviceType: true } } } },
+      },
+    });
+    if (!pkg) throw new NotFoundException('Package not found');
+
+    const { exclusiveServices, attachedItems, ...rest } = pkg;
+    const services = [
+      ...exclusiveServices.map((s) => ({ ...s, membershipType: 'EXCLUSIVE' as const })),
+      ...attachedItems.map((i) => ({ ...i.service, membershipType: 'ATTACHED' as const, isRequired: i.isRequired })),
+    ];
+
+    return { message: 'Package retrieved successfully', data: { ...rest, services } };
+  }
+
+  async approvePackage(adminId: string, dto: ApprovePackageDto) {
+    const pkg = await this.prisma.package.findUnique({
+      where: { id: dto.packageId },
+      include: { provider: { include: { user: true } } },
+    });
+    if (!pkg) throw new NotFoundException('Package not found');
+
+    if (pkg.status !== PackageStatus.PENDING_APPROVAL) {
+      throw new BadRequestException(
+        `Package cannot be reviewed while it is ${pkg.status} — only PENDING_APPROVAL packages can be approved or rejected`,
+      );
+    }
+
+    const newStatus = dto.isApproved ? PackageStatus.ACTIVE : PackageStatus.REJECTED;
+
+    const updated = await this.prisma.package.update({
+      where: { id: dto.packageId },
+      data: {
+        status: newStatus,
+        reviewedById: adminId,
+        reviewedAt: new Date(),
+        reviewNote: dto.adminMessage,
+      },
+    });
+
+    if (dto.isApproved) {
+      this.domainEventBus.packageApproved({
+        actorId: adminId,
+        targetUserId: pkg.provider.userId,
+        entityId: pkg.id,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        adminMessage: dto.adminMessage,
+      });
+    } else {
+      this.domainEventBus.packageRejected({
+        actorId: adminId,
+        targetUserId: pkg.provider.userId,
+        entityId: pkg.id,
+        packageId: pkg.id,
+        packageName: pkg.name,
+        adminMessage: dto.adminMessage,
+      });
+    }
+
+    return {
+      message: dto.isApproved ? 'Package approved successfully' : 'Package rejected',
+      data: {
+        packageId: updated.id,
+        packageName: updated.name,
+        approvalStatus: updated.status,
+        adminMessage: dto.adminMessage ?? null,
+      },
+    };
+  }
 }

@@ -27,6 +27,13 @@ import { ActionTrackingInterceptor } from './common/interceptors/action-tracking
 import redisConfig from './config/redis.config';
 import { DomainEventBus } from './common/events/domain-event-bus';
 import { EventModule } from './modules/event/event.module';
+import { PackagesModule } from './modules/packages/packages.module';
+import { PaymentsModule } from './modules/payments/payments.module';
+import { DiscountsModule } from './modules/discounts/discounts.module';
+import { FavoritesModule } from './modules/favorites/favorites.module';
+import { ReviewsModule } from './modules/reviews/reviews.module';
+import { ComplaintsModule } from './modules/complaints/complaints.module';
+import { DeliveryModule } from './modules/delivery/delivery.module';
 
 @Module({
   imports: [
@@ -78,6 +85,13 @@ import { EventModule } from './modules/event/event.module';
     BookingsModule,
     AdminModule,
     EventModule,
+    PackagesModule,
+    PaymentsModule,
+    DiscountsModule,
+    FavoritesModule,
+    ReviewsModule,
+    ComplaintsModule,
+    DeliveryModule,
   ],
   controllers: [
     AppController,

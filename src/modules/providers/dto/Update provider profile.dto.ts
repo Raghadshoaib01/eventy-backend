@@ -21,6 +21,11 @@ export class UpdateProviderProfileDto {
   @IsString()
   businessName?: string;
 
+  @ApiProperty({ example: 'CR-NABAAH-20251001', required: false })
+  @IsOptional()
+  @IsString()
+  businessLicense?: string;
+
   @ApiProperty({
     example: 'We provide premium catering services...',
     required: false,

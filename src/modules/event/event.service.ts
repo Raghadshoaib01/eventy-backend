@@ -34,7 +34,12 @@ export class EventService {
     const serviceIds = [...new Set(dto.services.map((s) => s.serviceId))];
 
     const services = await this.prisma.service.findMany({
-      where: { id: { in: serviceIds }, approvalStatus: 'ACTIVE', isCompleted: true },
+      // package-exclusive services can never be booked standalone
+      // (docs/packages-implementation-plan.md §6) — excluding them here means a
+      // customer trying to book one gets the same "not found" treatment as any
+      // other unavailable service, and it happens at the one place all
+      // standalone bookings are created.
+      where: { id: { in: serviceIds }, approvalStatus: 'ACTIVE', isCompleted: true, isPackaged: false },
       include: {
         serviceType: true,
         provider: { include: { user: { select: { id: true } } } },

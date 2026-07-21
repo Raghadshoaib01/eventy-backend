@@ -112,3 +112,32 @@ export class ApproveSubServiceDto {
   @IsOptional()
   adminMessage?: string;
 }
+
+// DTO for approving or rejecting a submitted package
+// (docs/packages-implementation-plan.md §5.4)
+export class ApprovePackageDto {
+  @ApiProperty({
+    example: 'uuid-of-package',
+    description: 'Package ID'
+  })
+  @IsUUID()
+  @IsNotEmpty()
+  packageId: string;
+
+  @ApiProperty({
+    example: true,
+    description: 'true for acceptance, false for rejection'
+  })
+  @IsBoolean()
+  @IsNotEmpty()
+  isApproved: boolean;
+
+  @ApiProperty({
+    example: 'Great combination, approved.',
+    required: false,
+    description: 'Optional administrative message'
+  })
+  @IsString()
+  @IsOptional()
+  adminMessage?: string;
+}

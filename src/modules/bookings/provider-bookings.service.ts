@@ -217,4 +217,44 @@ export class ProviderBookingsService {
     finalAmount,
   },    };
   }
+
+  // ─────────────────────────────────────────────────────────────
+  // PATCH /provider-bookings/:bookingId/complete
+  //
+  // Nothing anywhere previously set a Booking to COMPLETED — closing that
+  // gap here is what makes Reviews (docs/reviews-implementation-plan.md §3)
+  // actually reachable: a completed booking is what makes the existing
+  // (previously unwired) BOOKING_COMPLETED notification fire.
+  // ─────────────────────────────────────────────────────────────
+  async completeBooking(userId: string, bookingId: string) {
+    const provider = await this.prisma.serviceProvider.findFirst({ where: { userId } });
+    if (!provider) throw new NotFoundException('Provider not found');
+
+    const booking = await this.prisma.booking.findFirst({
+      where: { id: bookingId, providerId: provider.id },
+      include: { service: { include: { serviceType: { select: { name: true } } } } },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    if (booking.status !== 'IN_PROGRESS') {
+      throw new BadRequestException(
+        `Booking cannot be completed while it is ${booking.status} — it must be IN_PROGRESS`,
+      );
+    }
+
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'COMPLETED', completedAt: new Date() },
+    });
+
+    this.domainEventBus.bookingCompleted({
+      actorId: userId,
+      targetUserId: booking.customerId,
+      entityId: bookingId,
+      bookingId,
+      serviceName: booking.service.serviceType.name,
+    });
+
+    return { message: 'Booking marked as completed', data: { bookingId, status: 'COMPLETED' } };
+  }
 }

@@ -3,6 +3,8 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Patch,
   Query,
@@ -83,5 +85,20 @@ export class ProviderBookingsController {
     @Body() dto: SendQuoteDto,
   ) {
     return this.providerBookingsService.sendQuote(req.user.sub, bookingId, dto);
+  }
+
+  // ────────────────────────────────────────────
+  // PATCH /provider-bookings/:bookingId/complete
+  // ────────────────────────────────────────────
+  @Patch(':bookingId/complete')
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.BOOKING_COMPLETE, entity: 'Booking', entityIdKey: 'bookingId' })
+  @ApiOperation({ summary: 'Mark an IN_PROGRESS booking as completed' })
+  @ApiParam({ name: 'bookingId', description: 'Booking UUID' })
+  @ApiResponse({ status: 200, description: 'Booking marked as completed' })
+  @ApiResponse({ status: 400, description: 'Booking is not IN_PROGRESS' })
+  @ApiResponse({ status: 404, description: 'Booking not found' })
+  completeBooking(@Request() req, @Param('bookingId') bookingId: string) {
+    return this.providerBookingsService.completeBooking(req.user.sub, bookingId);
   }
 }

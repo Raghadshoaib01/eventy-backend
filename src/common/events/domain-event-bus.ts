@@ -18,8 +18,18 @@ import {
   ServiceApprovedPayload,
   ServiceRejectedPayload,
   PaymentConfirmedPayload,
+  PaymentFailedPayload,
   BookingQuoteSentPayload,
   EventCancelledPayload,
+  PackageApprovedPayload,
+  PackageRejectedPayload,
+  PackageServiceRemovedPayload,
+  PackageChangeAppliedPayload,
+  DiscountCancelledPayload,
+  ReviewRepliedPayload,
+  ComplaintStatusChangedPayload,
+  ComplaintRepliedPayload,
+  DeliveryStatusChangedPayload,
 } from './domain-events';
 
 /**
@@ -108,5 +118,63 @@ export class DomainEventBus {
 
   paymentConfirmed(payload: PaymentConfirmedPayload): void {
     this.emitter.emit(DomainEvents.PAYMENT_CONFIRMED, payload);
+  }
+
+  paymentFailed(payload: PaymentFailedPayload): void {
+    this.emitter.emit(DomainEvents.PAYMENT_FAILED, payload);
+  }
+
+  // ── Package ───────────────────────────────────────────────
+
+  packageApproved(payload: PackageApprovedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_APPROVED, payload);
+  }
+
+  packageRejected(payload: PackageRejectedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_REJECTED, payload);
+  }
+
+  packageServiceRemoved(payload: PackageServiceRemovedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_SERVICE_REMOVED, payload);
+  }
+
+  packageChangeApplied(payload: PackageChangeAppliedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_CHANGE_APPLIED, payload);
+  }
+
+  // ── Discount ──────────────────────────────────────────────
+
+  discountCancelled(payload: DiscountCancelledPayload): void {
+    this.emitter.emit(DomainEvents.DISCOUNT_CANCELLED, payload);
+  }
+
+  // ── Review ────────────────────────────────────────────────
+
+  reviewReplied(payload: ReviewRepliedPayload): void {
+    this.emitter.emit(DomainEvents.REVIEW_REPLIED, payload);
+  }
+
+  // ── Complaint ─────────────────────────────────────────────
+
+  complaintStatusChanged(payload: ComplaintStatusChangedPayload): void {
+    this.emitter.emit(DomainEvents.COMPLAINT_STATUS_CHANGED, payload);
+  }
+
+  complaintReplied(payload: ComplaintRepliedPayload): void {
+    this.emitter.emit(DomainEvents.COMPLAINT_REPLIED, payload);
+  }
+
+  // ── Delivery ──────────────────────────────────────────────
+
+  deliveryOutForDelivery(payload: DeliveryStatusChangedPayload): void {
+    this.emitter.emit(DomainEvents.DELIVERY_OUT_FOR_DELIVERY, payload);
+  }
+
+  deliveryCompleted(payload: DeliveryStatusChangedPayload): void {
+    this.emitter.emit(DomainEvents.DELIVERY_COMPLETED, payload);
+  }
+
+  deliveryFailed(payload: DeliveryStatusChangedPayload): void {
+    this.emitter.emit(DomainEvents.DELIVERY_FAILED, payload);
   }
 }

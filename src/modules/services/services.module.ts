@@ -5,6 +5,7 @@ import { ServiceDetailsController } from './controllers/servicedetails.controlle
 import { ServicesService } from './services.service';
 import { SubServiceService} from './sub-services.service';
 import { ServiceDetailsService } from './service details.service';
+import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 
 @Module({
@@ -14,7 +15,7 @@ import { ServiceDetailsService } from './service details.service';
     ServiceDetailsController
   ],
 
- providers: [ServicesService,SubServiceService,ServiceDetailsService],
+ providers: [ServicesService,SubServiceService,ServiceDetailsService,DomainEventBus],
    exports: [ServicesService],
 })
 export class ServicesModule {}

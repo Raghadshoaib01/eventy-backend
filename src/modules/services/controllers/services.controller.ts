@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -32,6 +33,7 @@ import { UserRole } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Public } from 'src/common/decorators/public.decorator';
 import { CreateServiceTypeDto } from '../dto/create-service-type.dto';
+import { UpdateServiceTypeDto } from '../dto/update-service-type.dto';
 import { AvailableServicesQueryDto } from '../dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from '../dto/service-detail-query.dto';
 import { FileFieldsInterceptor } from '@nestjs/platform-express';
@@ -65,6 +67,20 @@ export class ServicesController {
   @ApiResponse({ status: 409, description: 'Service type already exists' })
   createServiceType(@Body() dto: CreateServiceTypeDto) {
     return this.servicesService.createServiceType(dto);
+  }
+
+  // ════════════════════════════════
+  // PATCH /services/service-types/:typeId
+  // ════════════════════════════════
+  @Patch('service-types/:typeId')
+  @Roles(UserRole.ADMIN)
+  @UseGuards(RolesGuard)
+  @ApiOperation({ summary: 'Update a service type\'s isVenue/requiresDeliveryByDefault flags (Admin only)' })
+  @ApiParam({ name: 'typeId', description: 'Service type ID' })
+  @ApiResponse({ status: 200, description: 'Service type updated successfully' })
+  @ApiResponse({ status: 404, description: 'Service type not found' })
+  updateServiceType(@Param('typeId') typeId: string, @Body() dto: UpdateServiceTypeDto) {
+    return this.servicesService.updateServiceType(typeId, dto);
   }
 
   // ════════════════════════════════

@@ -102,12 +102,17 @@ export class ProviderProfileService {
   const updatedUser = await this.prisma.user.update({
     where: { id: userId },
     data: {
-      fullName: dto.fullName,
-      phoneNumber: dto.phoneNumber,
-      profileImage: profileImageUrl,
-      locationName: dto.locationName,
-      latitude: dto.latitude,
-      longitude: dto.longitude,
+  ...(dto.fullName?.trim() && { fullName: dto.fullName }),
+  ...(dto.phoneNumber?.trim() && { phoneNumber: dto.phoneNumber }),
+  ...(dto.locationName?.trim() && { locationName: dto.locationName }),
+...(profileImage && { profileImage: profileImageUrl }),  
+    ...(dto.latitude !== undefined &&
+    dto.latitude !== null &&
+    { latitude: dto.latitude }),
+
+  ...(dto.longitude !== undefined &&
+    dto.longitude !== null &&
+    { longitude: dto.longitude }),
     },
   });
 
@@ -115,8 +120,9 @@ export class ProviderProfileService {
   const updatedProvider = await this.prisma.serviceProvider.update({
     where: { id: user.provider.id },
     data: {
-      businessName: dto.businessName,
-      description: dto.description,
+  ...(dto.businessName?.trim() && { businessName: dto.businessName }),
+  ...(dto.businessLicense?.trim() && { businessLicense: dto.businessLicense }),
+  ...(dto.description?.trim() && { description: dto.description }),
     },
   });
 

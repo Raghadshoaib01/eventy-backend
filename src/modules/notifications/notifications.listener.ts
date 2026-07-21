@@ -13,11 +13,21 @@ import {
   DomainEvents,
   EventCancelledPayload,
   PaymentConfirmedPayload,
+  PaymentFailedPayload,
   ProviderApprovedPayload,
   ProviderRejectedPayload,
   ProviderRegisteredPayload,
   ServiceApprovedPayload,
   ServiceRejectedPayload,
+  PackageApprovedPayload,
+  PackageRejectedPayload,
+  PackageServiceRemovedPayload,
+  PackageChangeAppliedPayload,
+  DiscountCancelledPayload,
+  ReviewRepliedPayload,
+  ComplaintStatusChangedPayload,
+  ComplaintRepliedPayload,
+  DeliveryStatusChangedPayload,
   UserBlockedPayload,
   UserUnblockedPayload,
   UserVerifiedPayload,
@@ -178,9 +188,10 @@ export class NotificationsListener {
       userId: payload.targetUserId,
       type: NotificationType.BOOKING_COMPLETED,
       title: 'Booking Completed ✅',
-      body: `Your booking for "${payload.serviceName}" has been marked as completed.`,
+      body: `Your booking for "${payload.serviceName}" is complete — let others know how it went!`,
       metadata: {
-        screen: 'booking-details',
+        // deep-links to the review prompt (docs/reviews-implementation-plan.md §3)
+        screen: 'leave-review',
         bookingId: payload.bookingId,
         targetUserId: payload.targetUserId,
         serviceType: payload.serviceName,
@@ -339,6 +350,198 @@ export class NotificationsListener {
   }
 
   // ─────────────────────────────────────────────────────────────
+  // PACKAGE EVENTS (docs/packages-implementation-plan.md §5.4, §13.7)
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.PACKAGE_APPROVED, { async: true })
+  async handlePackageApproved(payload: PackageApprovedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_APPROVED,
+      title: 'Package Approved ✅',
+      body: payload.adminMessage
+        ? `Your package "${payload.packageName}" has been approved and is now live! Note: ${payload.adminMessage}`
+        : `Your package "${payload.packageName}" has been approved and is now live!`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        approvalStatus: 'APPROVED',
+        adminMessage: payload.adminMessage,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_REJECTED, { async: true })
+  async handlePackageRejected(payload: PackageRejectedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_REJECTED,
+      title: 'Package Rejected',
+      body: payload.adminMessage
+        ? `Your package "${payload.packageName}" was rejected. Reason: ${payload.adminMessage}`
+        : `Your package "${payload.packageName}" was rejected. Please review and resubmit.`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        approvalStatus: 'REJECTED',
+        rejectionReason: payload.adminMessage,
+        adminMessage: payload.adminMessage,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_SERVICE_REMOVED, { async: true })
+  async handlePackageServiceRemoved(payload: PackageServiceRemovedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_SERVICE_REMOVED,
+      title: 'Service Removed From Package',
+      body: payload.packageDeactivated
+        ? `"${payload.serviceName}" was removed from your package "${payload.packageName}", which no longer meets the minimum requirements and has been deactivated.`
+        : `"${payload.serviceName}" was removed from your package "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        serviceName: payload.serviceName,
+        packageDeactivated: payload.packageDeactivated,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_CHANGE_APPLIED, { async: true })
+  async handlePackageChangeApplied(payload: PackageChangeAppliedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_CHANGE_APPLIED,
+      title: 'Scheduled Package Update Applied',
+      body: `Your scheduled change to "${payload.packageName}" has been applied now that its bookings are complete.`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DISCOUNT EVENTS (docs/discounts-implementation-plan.md §7)
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.DISCOUNT_CANCELLED, { async: true })
+  async handleDiscountCancelled(payload: DiscountCancelledPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.DISCOUNT_CANCELLED,
+      title: 'Discount Cancelled',
+      body: 'A discount on one of your listings has been cancelled.',
+      metadata: {
+        screen: 'discounts',
+        discountId: payload.discountId,
+        actorUserId: payload.actorId,
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // REVIEW EVENTS (docs/reviews-implementation-plan.md §6)
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.REVIEW_REPLIED, { async: true })
+  async handleReviewReplied(payload: ReviewRepliedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.REVIEW_REPLIED,
+      title: 'The Provider Replied to Your Review',
+      body: 'The provider has replied to the review you left.',
+      metadata: {
+        screen: 'service-reviews',
+        reviewId: payload.reviewId,
+        serviceId: payload.serviceId,
+        actorUserId: payload.actorId,
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // COMPLAINT EVENTS (docs/complaints-implementation-plan.md §6)
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.COMPLAINT_STATUS_CHANGED, { async: true })
+  async handleComplaintStatusChanged(payload: ComplaintStatusChangedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.COMPLAINT_STATUS_CHANGED,
+      title: 'Complaint Status Updated',
+      body: `Your complaint is now ${payload.status}.`,
+      metadata: {
+        screen: 'complaint-details',
+        complaintId: payload.complaintId,
+        status: payload.status,
+        actorUserId: payload.actorId,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.COMPLAINT_REPLIED, { async: true })
+  async handleComplaintReplied(payload: ComplaintRepliedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.COMPLAINT_REPLIED,
+      title: 'Admin Replied to Your Complaint',
+      body: 'The administration has replied to your complaint.',
+      metadata: {
+        screen: 'complaint-details',
+        complaintId: payload.complaintId,
+        actorUserId: payload.actorId,
+      },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // DELIVERY EVENTS (docs/delivery-implementation-plan.md §6)
+  // ─────────────────────────────────────────────────────────────
+
+  @OnEvent(DomainEvents.DELIVERY_OUT_FOR_DELIVERY, { async: true })
+  async handleDeliveryOutForDelivery(payload: DeliveryStatusChangedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.DELIVERY_OUT_FOR_DELIVERY,
+      title: 'Out for Delivery',
+      body: 'Your order is now out for delivery.',
+      metadata: { screen: 'booking-delivery', deliveryId: payload.deliveryId, bookingId: payload.bookingId },
+    });
+  }
+
+  @OnEvent(DomainEvents.DELIVERY_COMPLETED, { async: true })
+  async handleDeliveryCompleted(payload: DeliveryStatusChangedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.DELIVERY_COMPLETED,
+      title: 'Delivered ✅',
+      body: 'Your order has been delivered.',
+      metadata: { screen: 'booking-delivery', deliveryId: payload.deliveryId, bookingId: payload.bookingId },
+    });
+  }
+
+  @OnEvent(DomainEvents.DELIVERY_FAILED, { async: true })
+  async handleDeliveryFailed(payload: DeliveryStatusChangedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.DELIVERY_FAILED,
+      title: 'Delivery Failed',
+      body: 'Delivery could not be completed. Please contact the provider.',
+      metadata: { screen: 'booking-delivery', deliveryId: payload.deliveryId, bookingId: payload.bookingId },
+    });
+  }
+
+  // ─────────────────────────────────────────────────────────────
   // PAYMENT EVENTS
   // ─────────────────────────────────────────────────────────────
 
@@ -354,6 +557,25 @@ export class NotificationsListener {
         bookingId: payload.bookingId,
         customerUserId: payload.targetUserId,
         amount: payload.amount,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PAYMENT_FAILED, { async: true })
+  async handlePaymentFailed(payload: PaymentFailedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PAYMENT_FAILED,
+      title: 'Payment Failed',
+      body: payload.failureReason
+        ? `Payment of ${payload.amount} failed: ${payload.failureReason}`
+        : `Payment of ${payload.amount} failed. Please try again.`,
+      metadata: {
+        screen: 'booking-payment',
+        bookingId: payload.bookingId,
+        customerUserId: payload.targetUserId,
+        amount: payload.amount,
+        failureReason: payload.failureReason,
       },
     });
   }

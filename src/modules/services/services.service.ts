@@ -13,13 +13,15 @@ import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { EngagementService } from 'src/shared/services/engagement.service';
-import { FileType } from '@prisma/client';
+import { FileType, PackageStatus, PackagePricingStrategy } from '@prisma/client';
+import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Injectable()
 export class ServicesService {
   constructor(private readonly prisma: PrismaService,
         private readonly cloudinaryService: CloudinaryService,
         private readonly engagementService: EngagementService,
+        private readonly domainEventBus: DomainEventBus,
 
   ) {}
 
@@ -37,6 +39,10 @@ async createService(
   serviceLogo?: Express.Multer.File,
   businessFile?: Express.Multer.File,
   subServiceMedia?: Express.Multer.File[],
+  // Set by PackagesService when this service is created as package-exclusive
+  // (docs/packages-implementation-plan.md §5.3) — never provided by the public
+  // POST /services endpoint's own DTO.
+  packageId?: string,
 ) {
   const user = await this.prisma.user.findUnique({
     where: { id: userId },
@@ -122,6 +128,8 @@ async createService(
         serviceLogo: serviceLogoUrl,
         businessFile: businessFileUrl,
         price: dto.price,
+        isPackaged: !!packageId,
+        packageId: packageId ?? undefined,
         eventTypes: {
           create: dto.eventTypes.map((type) => ({
             eventType: type,
@@ -278,7 +286,9 @@ async getServiceById(
   // ── Authorization ──────────────────────────────────────────
   const isAdmin   = user.role === 'ADMIN';
   const isOwner   = user.provider?.id === service.providerId;
-  const isPublic  = service.approvalStatus === 'ACTIVE';
+  // package-exclusive services are never independently visible, even to a
+  // customer who guesses/shares the URL (docs/packages-implementation-plan.md §6)
+  const isPublic  = service.approvalStatus === 'ACTIVE' && !service.isPackaged;
 
   if (!isAdmin && !isOwner && !isPublic) {
     throw new NotFoundException('Service not found');
@@ -421,6 +431,9 @@ async getServiceById(
   // ========================
   // 🗑️ Delete Service
   // ========================
+  // docs/packages-implementation-plan.md §10 — deleting a public service that's
+  // attached to one or more of the same provider's packages cascades out of
+  // them, re-validates each package's composition, and notifies the provider.
   async deleteService(userId: string, serviceId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -433,6 +446,7 @@ async getServiceById(
 
     const service = await this.prisma.service.findUnique({
       where: { id: serviceId },
+      include: { serviceType: true },
     });
 
     if (!service) {
@@ -443,14 +457,73 @@ async getServiceById(
       throw new ForbiddenException('Access denied');
     }
 
+    if (service.isPackaged) {
+      throw new BadRequestException(
+        'Package-exclusive services must be removed via the package endpoints, not deleted directly (docs/packages-implementation-plan.md §8.1)',
+      );
+    }
+
+    const activeBooking = await this.prisma.booking.findFirst({
+      where: { serviceId, status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
+    });
+    if (activeBooking) {
+      throw new BadRequestException('Cannot delete a service with active bookings');
+    }
+
+    // Capture affected packages BEFORE the delete cascades their PackageItem rows away.
+    const affectedItems = await this.prisma.packageItem.findMany({
+      where: { serviceId },
+      select: { packageId: true },
+    });
+    const affectedPackageIds = [...new Set(affectedItems.map((i) => i.packageId))];
+
     await this.prisma.service.delete({
       where: { id: serviceId },
     });
+
+    for (const packageId of affectedPackageIds) {
+      await this.revalidatePackageAfterServiceRemoval(userId, packageId, service.serviceType.name);
+    }
 
     return {
       message: 'Service deleted successfully',
       data: null,
     };
+  }
+
+  private async revalidatePackageAfterServiceRemoval(actorId: string, packageId: string, removedServiceName: string) {
+    const pkg = await this.prisma.package.findUnique({
+      where: { id: packageId },
+      include: {
+        provider: { include: { user: true } },
+        exclusiveServices: { include: { serviceType: true } },
+        attachedItems: { include: { service: { include: { serviceType: true } } } },
+      },
+    });
+    if (!pkg) return;
+
+    const remaining = [...pkg.exclusiveServices, ...pkg.attachedItems.map((i) => i.service)];
+
+    let stillValid = remaining.length > 0;
+    if (stillValid && pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
+      const hallCount = remaining.filter((s) => s.serviceType.isVenue).length;
+      stillValid = hallCount === 1 && remaining.length >= 2;
+    }
+
+    const willDeactivate = !stillValid && pkg.status === PackageStatus.ACTIVE;
+    if (willDeactivate) {
+      await this.prisma.package.update({ where: { id: packageId }, data: { status: PackageStatus.INACTIVE } });
+    }
+
+    this.domainEventBus.packageServiceRemoved({
+      actorId,
+      targetUserId: pkg.provider.userId,
+      entityId: pkg.id,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      serviceName: removedServiceName,
+      packageDeactivated: willDeactivate,
+    });
   }
 
   // ========================
@@ -473,6 +546,9 @@ async getServiceById(
 
     const where: any = {
       approvalStatus: dto.status ?? 'ACTIVE',   // ← إذا ما في status → ACTIVE
+      // package-exclusive services never appear in public search/browse
+      // (docs/packages-implementation-plan.md §1, §6)
+      isPackaged: false,
     };
 
     if (isDefaultSearch) {
@@ -643,6 +719,23 @@ async createServiceType(dto: CreateServiceTypeDto) {
     message: 'Service type created successfully',
     data: type,
   };
+}
+
+// ── تحديث نوع خدمة (isVenue / requiresDeliveryByDefault) ──
+async updateServiceType(typeId: string, dto: { description?: string; isVenue?: boolean; requiresDeliveryByDefault?: boolean }) {
+  const type = await this.prisma.serviceType.findUnique({ where: { id: typeId } });
+  if (!type) throw new NotFoundException('Service type not found');
+
+  const updated = await this.prisma.serviceType.update({
+    where: { id: typeId },
+    data: {
+      description: dto.description,
+      isVenue: dto.isVenue,
+      requiresDeliveryByDefault: dto.requiresDeliveryByDefault,
+    },
+  });
+
+  return { message: 'Service type updated successfully', data: updated };
 }
 
 // ── الدالة الثالثة ─────────────────────────────────────

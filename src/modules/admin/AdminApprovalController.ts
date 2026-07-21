@@ -22,9 +22,10 @@ import {
   ApproveProviderJoinDto,
   ApproveServiceDto,
   ApproveSubServiceDto,
+  ApprovePackageDto,
 } from './dto/ApproveProviderJoinDto';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { AuditAction, UserRole } from '@prisma/client';
+import { AuditAction, PackageStatus, UserRole } from '@prisma/client';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { TrackAction } from 'src/common/decorators/track-action.decorator';
 import { DomainEvents } from 'src/common/events/domain-events';
@@ -56,6 +57,38 @@ export class AdminApprovalController {
   @ApiResponse({ status: 200, description: 'Change requests retrieved successfully' })
   listChangeRequests(@Query() query: ChangeRequestQueryDto) {
     return this.adminApprovalService.listChangeRequests(query);
+  }
+
+  /**
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   * 🔹 Packages inbox (docs/packages-implementation-plan.md §5.4)
+   *
+   * MUST be registered before the generic `:id` route below — Nest/Express
+   * match routes in declaration order, and `:id` would otherwise swallow
+   * `/admin/approvals/packages` as if "packages" were an id (verified live:
+   * it did, returning "Change request not found" for every packages route).
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   */
+  @Get('packages')
+  @ApiOperation({
+    summary: 'List packages awaiting review',
+    description: 'Defaults to PENDING_APPROVAL when no status filter is given.',
+  })
+  @ApiResponse({ status: 200, description: 'Packages retrieved successfully' })
+  listPendingPackages(
+    @Query('page') page?: number,
+    @Query('limit') limit?: number,
+    @Query('status') status?: PackageStatus,
+  ) {
+    return this.adminApprovalService.listPendingPackages({ page, limit, status });
+  }
+
+  @Get('packages/:id')
+  @ApiOperation({ summary: 'Get package details for review' })
+  @ApiResponse({ status: 200, description: 'Package retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Package not found' })
+  getPackageForReview(@Param('id') id: string) {
+    return this.adminApprovalService.getPackageForReview(id);
   }
 
   @Get(':id')
@@ -380,4 +413,54 @@ async approveSubServiceUpdate(
   const adminId = req.user.sub;
   return this.adminApprovalService.approveSubServiceUpdate(adminId, dto);
 }
+
+  /**
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   * 🔹 API #6: Approve/Reject a submitted Package
+   * (docs/packages-implementation-plan.md §5.4) — list/detail routes moved
+   * above the generic `:id` route near the top of this controller.
+   * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+   */
+  @Post('package')
+  @HttpCode(HttpStatus.OK)
+  @Audit({
+    action: (data: any) =>
+      data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+    entity: 'Package',
+    entityIdKey: 'packageId',
+  })
+  @ApiOperation({
+    summary: 'Approve or reject a submitted package',
+    description: `
+      The admin approves or rejects a package submitted via POST /provider/packages/:id/submit.
+
+      On approval: Package status is updated to ACTIVE and becomes visible to customers.
+      On rejection: Package status is updated to REJECTED with an optional reason; the
+      provider may edit and resubmit it.
+    `,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Request processed successfully',
+    schema: {
+      example: {
+        success: true,
+        statusCode: 200,
+        message: 'Package approved successfully',
+        data: {
+          packageId: 'uuid-123',
+          packageName: 'Grand Wedding Bundle',
+          approvalStatus: 'ACTIVE',
+          adminMessage: null,
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Package is not pending approval' })
+  @ApiResponse({ status: 403, description: 'User is not an admin' })
+  @ApiResponse({ status: 404, description: 'Package not found' })
+  async approvePackage(@Request() req, @Body() dto: ApprovePackageDto) {
+    const adminId = req.user.sub;
+    return this.adminApprovalService.approvePackage(adminId, dto);
+  }
 }

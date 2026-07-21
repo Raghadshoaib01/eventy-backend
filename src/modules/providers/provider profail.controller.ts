@@ -59,6 +59,7 @@ export class ProviderProfileController {
         fullName: { type: 'string', example: 'Ahmad Mohammad' },
         phoneNumber: { type: 'string', example: '+962791234567' },
         businessName: { type: 'string', example: 'Al-Noor Catering & Events' },
+        businessLicense: { type: 'string', example: 'CR-NABAAH-20251001' },
         description: { type: 'string', example: 'Premium catering services...' },
         locationName: { type: 'string', example: 'Amman, Jordan' },
         latitude: { type: 'number', example: 31.9539 },

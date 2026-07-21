@@ -24,6 +24,7 @@ import { SendQuoteDto } from './dto/send-quote.dto';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { AuditAction } from '@prisma/client';
+import { RejectBookingDto } from './dto/reject-booking.dto';
 
 @ApiTags('Provider Bookings')
 @ApiBearerAuth('JWT-auth')
@@ -100,5 +101,20 @@ export class ProviderBookingsController {
   @ApiResponse({ status: 404, description: 'Booking not found' })
   completeBooking(@Request() req, @Param('bookingId') bookingId: string) {
     return this.providerBookingsService.completeBooking(req.user.sub, bookingId);
+  }
+
+  // ────────────────────────────────────────────
+  // PATCH /provider-bookings/:bookingId/reject
+  // ────────────────────────────────────────────
+  @Patch(':bookingId/reject')
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.BOOKING_REJECT, entity: 'Booking', entityIdKey: 'bookingId' })
+@ApiOperation({ summary: 'Reject a pending booking' })
+  @ApiParam({ name: 'bookingId', description: 'Booking UUID' })
+  @ApiResponse({ status: 200, description: 'Booking marked as rejected' })
+  @ApiResponse({ status: 400, description: 'Booking is not PENDING' })
+  @ApiResponse({ status: 404, description: 'Booking not found' })
+  rejectBooking(@Request() req, @Param('bookingId') bookingId: string, @Body() dto: RejectBookingDto,) {
+    return this.providerBookingsService.rejectBooking(req.user.sub, bookingId,dto);
   }
 }

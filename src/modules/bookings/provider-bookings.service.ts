@@ -8,6 +8,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { SendQuoteDto } from './dto/send-quote.dto';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
+import { RejectBookingDto } from './dto/reject-booking.dto';
 
 @Injectable()
 export class ProviderBookingsService {
@@ -256,5 +257,38 @@ export class ProviderBookingsService {
     });
 
     return { message: 'Booking marked as completed', data: { bookingId, status: 'COMPLETED' } };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  async rejectBooking(userId: string, bookingId: string , dto: RejectBookingDto) {
+    const provider = await this.prisma.serviceProvider.findFirst({ where: { userId } });
+    if (!provider) throw new NotFoundException('Provider not found');
+
+    const booking = await this.prisma.booking.findFirst({
+      where: { id: bookingId, providerId: provider.id },
+      include: { service: { include: { serviceType: { select: { name: true } } } } },
+    });
+    if (!booking) throw new NotFoundException('Booking not found');
+
+    if (booking.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Booking cannot be rejected while it is ${booking.status} — it must be PENDING`,
+      );
+    }
+
+    await this.prisma.booking.update({
+      where: { id: bookingId },
+      data: { status: 'REJECTED', completedAt: new Date(), rejectionReason: dto.rejectionReason},
+    });
+
+    this.domainEventBus.bookingRejected({
+      actorId: userId,
+      targetUserId: booking.customerId,
+      entityId: bookingId,
+      bookingId,
+      serviceName: booking.service.serviceType.name,
+    });
+
+    return { message: 'Booking rejected successfully', data: { bookingId, status: 'REJECTED' } };
   }
 }

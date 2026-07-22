@@ -123,7 +123,7 @@ export class ProviderAuthService {
                 serviceTypeId: dto.serviceTypeId,
                 description: dto.description,
                 isCompleted: false, // سيتم إكمالها بعد القبول
-                approvalStatus: 'PENDING_DETAILS',
+                approvalStatus: 'PENDING_APPROVAL',
                 serviceLogo: serviceLogoUrl,
                 businessFile: businessFileUrl,
 

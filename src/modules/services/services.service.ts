@@ -13,7 +13,7 @@ import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { EngagementService } from 'src/shared/services/engagement.service';
-import { FileType, PackageStatus, PackagePricingStrategy } from '@prisma/client';
+import { FileType, PackageStatus, PackagePricingStrategy, DayOfWeek } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Injectable()
@@ -24,11 +24,6 @@ export class ServicesService {
         private readonly domainEventBus: DomainEventBus,
 
   ) {}
-
-  // ========================
-  // ➕ Create Service
-  // ========================
-// src/modules/services/services.service.ts
 
 // ========================
 // ➕ Create Service
@@ -227,6 +222,18 @@ async getServiceById(
   const filesSkip = (filesPage - 1) * filesLimit;
   const subsSkip  = (subsPage  - 1) * subsLimit;
 
+  const DAY_NAMES: DayOfWeek[] = [
+  DayOfWeek.SUNDAY,
+  DayOfWeek.MONDAY,
+  DayOfWeek.TUESDAY,
+  DayOfWeek.WEDNESDAY,
+  DayOfWeek.THURSDAY,
+  DayOfWeek.FRIDAY,
+  DayOfWeek.SATURDAY,
+];
+
+  const dayOfWeek: DayOfWeek | undefined = query.date? DAY_NAMES[new Date(query.date).getDay()]: undefined;
+  
   const user = await this.prisma.user.findUnique({
     where: { id: userId },
     include: { provider: true },
@@ -251,9 +258,11 @@ async getServiceById(
 
       // ✅ الإتاحة مع أيام العمل
       availability: {
+        where: dayOfWeek? { workingDays: { some: { dayOfWeek } } }: undefined,
         include: {
           timeSlots: true,
-          workingDays: { select: { dayOfWeek: true } },
+          workingDays: { where: dayOfWeek ? { dayOfWeek } : undefined,
+            select: { dayOfWeek: true }, },
         },
       },
 

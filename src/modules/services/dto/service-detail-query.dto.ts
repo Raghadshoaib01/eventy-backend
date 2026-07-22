@@ -1,7 +1,7 @@
 // src/modules/services/dto/service-detail-query.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class ServiceDetailQueryDto {
   @ApiPropertyOptional({ description: 'Files page (default: 1)' })
@@ -19,4 +19,13 @@ export class ServiceDetailQueryDto {
   @ApiPropertyOptional({ description: 'Sub-services per page (default: 10)' })
   @IsOptional() @Type(() => Number) @IsInt() @Min(1)
   subsLimit?: number = 10;
+
+  @ApiPropertyOptional({
+    description:
+      'ISO date. If provided, availability/timeSlots returned are filtered to that day only. Omit to get full weekly availability.2026-08-15',
+  })
+  @IsOptional()
+  @IsString()
+  @IsDateString()
+  date?: string;
 }

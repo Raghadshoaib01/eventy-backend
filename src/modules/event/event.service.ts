@@ -171,7 +171,7 @@ export class EventService {
           totalPrice: number;
         }> = [];
 
-        for (const item of svcInput.items) {
+        for (const item of svcInput.items?? []) {
           const sub = svc.subServices.find((ss) => ss.id === item.subServiceId)!;
           const totalPrice = sub.pricePerUnit * item.quantity;
           totalAmount += totalPrice;

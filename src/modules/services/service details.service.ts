@@ -107,6 +107,7 @@ async completeServiceDetails(
         ...(dto.locationName !== undefined && { locationName: dto.locationName }),
         ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
         ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
+        approvalStatus: 'ACTIVE',
         // ✅ Service media (واحد فقط)
         files: {
           create: {
@@ -150,6 +151,7 @@ async completeServiceDetails(
             pricePerUnit: dto.subService.pricePerUnit,
             unitType: dto.subService.unitType,
             dailyCapacity: dto.subService.dailyCapacity,
+            approvalStatus:'ACTIVE',
 
             // multiple media
           media: {
@@ -281,6 +283,7 @@ async completeServiceDetails(
           ...(dto.locationName !== undefined && { locationName: dto.locationName }),
           ...(dto.latitude    !== undefined && { latitude:     dto.latitude    }),
           ...(dto.longitude   !== undefined && { longitude:    dto.longitude   }),
+          approvalStatus:'ACTIVE',
           files: {
             create: uploadedMedia.map(m => ({
               fileUrl: m.url,

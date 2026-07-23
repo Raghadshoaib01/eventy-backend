@@ -14,6 +14,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { EventType } from '@prisma/client';
+import { IsTodayOrFuture } from 'src/common/validators/future-date.validator';
 
 export class BookingItemInputDto {
   @ApiProperty({ example: 'uuid-of-subservice' })
@@ -66,8 +67,11 @@ export class CreateEventDto {
   @IsEnum(EventType)
   eventType: EventType;
 
-  @ApiProperty({ example: '2025-08-15T00:00:00Z' })
+  @ApiProperty({ example: '2026-08-15T00:00:00Z' })
   @IsDateString()
+  @IsTodayOrFuture({
+  message: 'Event date cannot be in the past',
+})
   eventDate: string;
 
   @ApiProperty({ example: '18:00' })

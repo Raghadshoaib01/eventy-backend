@@ -31,3 +31,8 @@ export interface SeedNotificationContext {
   events: SeededEventsContext;
   providers: SeededProvidersContext;
 }
+
+// Re-exported for convenience in seed.ts
+export type { SeededPackagesContext } from './packages.seed';
+export type { SeededDiscountsContext } from './discounts.seed';
+export type { SeededPaymentsContext  } from './payments.seed';

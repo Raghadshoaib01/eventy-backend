@@ -13,6 +13,7 @@ import { BookingStatus, Prisma, UserRole } from '@prisma/client';
 import { JwtPayload } from 'src/common/helpers/token.helper';
 import { GetEventsDto } from './dto/get-events.dto';
 import { isRangeWithinWindow, rangesOverlap } from 'src/common/helpers/time.helper';
+import { formatBookingsList } from 'src/common/helpers/booking-response.helper';
 
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
@@ -642,9 +643,10 @@ export class EventService {
             },
             provider: {
               include: {
-                user: { select: { fullName: true, profileImage: true, phoneNumber: true } },
+                user: { select: { fullName: true, profileImage: true, phoneNumber: true, latitude: true, longitude: true, locationName: true } },
               },
             },
+            payment: true,
             items: {
               include: {
                 subService: {
@@ -664,7 +666,10 @@ export class EventService {
 
     return {
       message: 'Event bookings retrieved successfully',
-      data: event,
+      data: {
+        ...event,
+        bookings: formatBookingsList(event.bookings),
+      },
     };
     
   }

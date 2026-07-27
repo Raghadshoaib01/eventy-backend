@@ -9,6 +9,7 @@ import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { SendQuoteDto } from './dto/send-quote.dto';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { RejectBookingDto } from './dto/reject-booking.dto';
+import { formatBookingResponse, formatBookingsList } from 'src/common/helpers/booking-response.helper';
 
 @Injectable()
 export class ProviderBookingsService {
@@ -45,6 +46,7 @@ export class ProviderBookingsService {
           customer: {
             select: { fullName: true, phoneNumber: true, profileImage: true },
           },
+          payment: true,
         },
       }),
       this.prisma.booking.count({ where: { providerId: provider.id } }),
@@ -53,7 +55,7 @@ export class ProviderBookingsService {
     return {
       message: 'Provider bookings retrieved successfully',
       data: {
-        items: bookings,
+        items: formatBookingsList(bookings),
         meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       },
     };
@@ -95,6 +97,7 @@ export class ProviderBookingsService {
             },
           },
         },
+        payment: true,
       },
     });
 
@@ -102,7 +105,7 @@ export class ProviderBookingsService {
 
     return {
       message: 'Booking details retrieved successfully',
-      data: booking,
+      data: formatBookingResponse(booking),
     };
   }
 

@@ -237,9 +237,10 @@ export class PaymentsService {
     // different "wait for everyone" groups (docs/packages-implementation-plan.md §12.4).
     if (booking.packageBookingId) {
       await this.packagesService.tryProgressPackageBooking(booking.packageBookingId);
-    } else if (booking.eventId) {
-      await this.bookingsService.tryProgressEvent(booking.eventId);
     }
+    //  else if (booking.eventId) {
+    //   await this.bookingsService.tryProgressEvent(booking.eventId);
+    // }
 
     return paid;
   }

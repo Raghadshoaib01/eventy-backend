@@ -33,224 +33,6 @@ export class EventService {
   // ─────────────────────────────────────────────────────────────
   // POST /events
   // ─────────────────────────────────────────────────────────────
-  /*
-  async createEvent0(customerId: string, dto: CreateEventDto) {
-    // 1. Verify customer record exists
-    const customer = await this.prisma.customer.findUnique({
-      where: { userId: customerId },
-    });
-    if (!customer) throw new NotFoundException('Customer account not found');
-
-    // 2. Load all requested services in one query
-    const serviceIds = [...new Set(dto.services.map((s) => s.serviceId))];
-
-    const services = await this.prisma.service.findMany({
-      // package-exclusive services can never be booked standalone
-      // (docs/packages-implementation-plan.md §6) — excluding them here means a
-      // customer trying to book one gets the same "not found" treatment as any
-      // other unavailable service, and it happens at the one place all
-      // standalone bookings are created.
-      where: { id: { in: serviceIds }, approvalStatus: 'ACTIVE', isCompleted: true, isPackaged: false },
-      include: {
-        serviceType: true,
-        provider: { include: { user: { select: { id: true } } } },
-        subServices: { where: { isAvailable: true, approvalStatus: 'ACTIVE' } },
-        availability: { include: { workingDays: true, timeSlots: true } },
-      },
-    });
-
-    if (services.length !== serviceIds.length) {
-      const found = new Set(services.map((s) => s.id));
-      const missing = serviceIds.filter((id) => !found.has(id));
-      throw new NotFoundException(
-        `Services not active or not found: ${missing.join(', ')}`,
-      );
-    }
-
-    // 3. Shared date helpers
-    const eventDate = new Date(dto.eventDate);
-    const DAY_NAMES = [
-      'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY',
-      'THURSDAY', 'FRIDAY', 'SATURDAY',
-    ];
-    const dayOfWeek = DAY_NAMES[eventDate.getDay()];
-
-    const startOfDay = new Date(eventDate);
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date(eventDate);
-    endOfDay.setHours(23, 59, 59, 999);
-
-    // 4. Per-service validations (before opening transaction)
-    for (const svcInput of dto.services) {
-      const svc = services.find((s) => s.id === svcInput.serviceId)!;
-
-      // 4a. Service must work on the requested day
-      const worksOnDay = svc.availability.some((a) =>
-        a.workingDays.some((d) => d.dayOfWeek === dayOfWeek),
-      );
-      if (!worksOnDay) {
-        throw new BadRequestException(
-          `Service "${svc.serviceType.name}" does not work on ${dayOfWeek}`,
-        );
-      }
-
-      // 4b. Guest capacity check
-      if (
-        dto.numberOfGuests &&
-        svc.maxCapacity &&
-        dto.numberOfGuests > svc.maxCapacity
-      ) {
-        throw new BadRequestException(
-          `Service "${svc.serviceType.name}" cannot accommodate ${dto.numberOfGuests} guests (max: ${svc.maxCapacity})`,
-        );
-      }
-        // ✅ فحص الخدمات الفرعية حسب نوع الخدمة
-      const HALL_SOUND = ['HALL', 'SOUND'];
-      const requiresItems = !HALL_SOUND.includes(svc.serviceType.name);
-
-      if (requiresItems && (!svcInput.items || svcInput.items.length === 0)) {
-        throw new BadRequestException(
-          `Service "${svc.serviceType.name}" requires at least one sub-service item`,
-        );
-      }
-
-      if (!requiresItems && svcInput.items && svcInput.items.length > 0) {
-        throw new BadRequestException(
-          `Service "${svc.serviceType.name}" does not accept sub-service items — remove the items array`,
-        );
-      }
-      // 4c. Idempotency: no active booking for same service on same date
-      const duplicate = await this.prisma.booking.findFirst({
-        where: {
-          customerId,
-          serviceId: svcInput.serviceId,
-          status: {
-            in: ['PENDING', 'QUOTE_SENT', 'CONFIRMED', 'IN_PROGRESS'],
-          },
-          event: { eventDate: { gte: startOfDay, lte: endOfDay } },
-        },
-      });
-      if (duplicate) {
-        throw new ConflictException(
-          `You already have an active booking for "${svc.serviceType.name}" on this date`,
-        );
-      }
-
-      // 4d. Validate every sub-service belongs to this service
-      for (const item of svcInput.items?? []) {
-        const sub = svc.subServices.find((ss) => ss.id === item.subServiceId);
-        if (!sub) {
-          throw new BadRequestException(
-            `SubService "${item.subServiceId}" not found or not available in service "${svc.serviceType.name}"`,
-          );
-        }
-      }
-    }
-
-    // 5. Create Event + all Bookings + all BookingItems in one transaction
-    const result = await this.prisma.$transaction(async (tx) => {
-      const event = await tx.event.create({
-        data: {
-          customerId,
-          name: dto.name,
-          eventType: dto.eventType,
-          eventDate,
-          eventStartTime: dto.eventStartTime,
-          eventEndTime: dto.eventEndTime,
-          eventLocation: dto.eventLocation,
-          numberOfGuests: dto.numberOfGuests,
-          customerNotes: dto.customerNotes,
-          status: 'ACTIVE',
-        },
-      });
-
-      const createdBookings: Array<{
-        booking: any;
-        providerUserId: string;
-        serviceName: string;
-      }> = [];
-
-      for (const svcInput of dto.services) {
-        const svc = services.find((s) => s.id === svcInput.serviceId)!;
-
-        // Build booking items and calculate totalAmount
-        let totalAmount = 0;
-        const itemsData: Array<{
-          subServiceId: string;
-          quantity: number;
-          unitPrice: number;
-          totalPrice: number;
-        }> = [];
-
-        for (const item of svcInput.items?? []) {
-          const sub = svc.subServices.find((ss) => ss.id === item.subServiceId)!;
-          const totalPrice = sub.pricePerUnit * item.quantity;
-          totalAmount += totalPrice;
-          itemsData.push({
-            subServiceId: item.subServiceId,
-            quantity: item.quantity,
-            unitPrice: sub.pricePerUnit,
-            totalPrice,
-          });
-        }
-
-        // Hall / Sound — no sub-services, use service.price as initial amount
-        if (itemsData.length === 0 && svc.price) {
-          totalAmount = svc.price;
-        }
-
-      const bookingData: Prisma.BookingUncheckedCreateInput = {
-        eventId: event.id,
-        customerId,
-        providerId: svc.providerId,
-        serviceId: svcInput.serviceId,
-        timeSlotId: svcInput.timeSlotId ?? null,
-        totalAmount,
-        status: 'PENDING',
-        items: { create: itemsData },
-      };
-      const booking = await tx.booking.create({
-        data: bookingData,
-        include: {
-          items: true,
-          service: { include: { serviceType: { select: { name: true } } } },
-        },
-      });
-        createdBookings.push({
-          booking,
-          providerUserId: svc.provider.user.id,
-          serviceName: svc.serviceType.name,
-        });
-      }
-
-      return { event, createdBookings };
-    });
-
-    // 6. Emit BOOKING_CREATED for every provider (outside transaction — non-blocking)
-    for (const { booking, providerUserId, serviceName } of result.createdBookings) {
-      this.domainEventBus.bookingCreated({
-        actorId: customerId,
-        targetUserId: providerUserId,
-        entityId: booking.id,
-        bookingId: booking.id,
-        serviceName,
-        eventDate,
-      });
-    }
-
-    return {
-      message: 'Event and bookings created successfully',
-      data: {
-        event: result.event,
-        bookings: result.createdBookings.map((cb) => cb.booking),
-      },
-    };
-  }
-  */
-
-  // ─────────────────────────────────────────────────────────────
-  // POST /events
-  // ─────────────────────────────────────────────────────────────
   async createEvent(customerId: string, dto: CreateEventDto) {
     // 1. Verify customer record exists
     const customer = await this.prisma.customer.findUnique({
@@ -621,10 +403,96 @@ export class EventService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // GET /events/:eventId/bookings — unchanged, keep as-is
-  // GET /events — unchanged, keep as-is
+ 
   // ─────────────────────────────────────────────────────────────
+  // PATCH /events/:eventId/start
+  //
+  // Explicit customer action replacing the old automatic progression.
+  // Event moves to IN_PROGRESS only when:
+  //   - at least one booking is CONFIRMED + PAID, and
+  //   - every other booking is CONFIRMED(+PAID), CANCELLED, or REJECTED
+  //     (i.e. none left PENDING, QUOTE_SENT, IN_PROGRESS, or COMPLETED).
+  // ─────────────────────────────────────────────────────────────
+  async startEvent(customerId: string, eventId: string) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, customerId: true, name: true, status: true },
+    });
+    if (!event) throw new NotFoundException('Event not found');
+    if (event.customerId !== customerId) {
+      throw new ForbiddenException('Access denied — not your event');
+    }
 
+    const bookings = await this.prisma.booking.findMany({
+      where: { eventId },
+      include: {
+        payment: { select: { status: true } },
+        service: { include: { serviceType: { select: { name: true } } } },
+        provider: { include: { user: { select: { id: true } } } },
+      },
+    });
+
+    if (bookings.length === 0) {
+      throw new BadRequestException('This event has no bookings to start');
+    }
+
+    const disallowedStatuses = ['PENDING', 'QUOTE_SENT', 'IN_PROGRESS', 'COMPLETED'];
+    const blocking = bookings.filter((b) => disallowedStatuses.includes(b.status));
+    if (blocking.length > 0) {
+      throw new BadRequestException(
+        `Cannot start event — the following bookings are not finalized yet: ${blocking
+          .map((b) => `${b.id} (${b.status})`)
+          .join(', ')}`,
+      );
+    }
+
+    const confirmedBookings = bookings.filter((b) => b.status === 'CONFIRMED');
+    const confirmedUnpaid = confirmedBookings.filter((b) => b.payment?.status !== 'PAID');
+    if (confirmedUnpaid.length > 0) {
+      throw new BadRequestException(
+        `Cannot start event — the following confirmed bookings are not paid yet: ${confirmedUnpaid
+          .map((b) => b.id)
+          .join(', ')}`,
+      );
+    }
+
+    if (confirmedBookings.length === 0) {
+      throw new BadRequestException(
+        'Cannot start event — at least one booking must be CONFIRMED and paid',
+      );
+    }
+
+    const confirmedIds = confirmedBookings.map((b) => b.id);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.updateMany({
+        where: { id: { in: confirmedIds } },
+        data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
+      });
+      await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
+    });
+
+    // Notify every affected provider that their booking is now IN_PROGRESS.
+    // todo : new notification that the event is started and all bookings are in progress
+    for (const booking of confirmedBookings) {
+      this.domainEventBus.bookingAccepted({
+        actorId: customerId,
+        targetUserId: booking.provider.user.id,
+        entityId: booking.id,
+        bookingId: booking.id,
+        serviceName: booking.service.serviceType.name,
+        eventDate: new Date(),
+      });
+    }
+
+    return {
+      message: 'Event started successfully — all confirmed bookings are now in progress',
+      data: {
+        eventId,
+        eventStatus: 'IN_PROGRESS',
+      },
+    };
+  }
 
   // ─────────────────────────────────────────────────────────────
   // GET /events/:eventId/bookings

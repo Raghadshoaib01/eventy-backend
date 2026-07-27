@@ -145,12 +145,17 @@ export class NotificationsListener {
 
   @OnEvent(DomainEvents.BOOKING_ACCEPTED, { async: true })
   async handleBookingAccepted(payload: BookingAcceptedPayload): Promise<void> {
-    // Notify the CUSTOMER that their booking was accepted
+    const body = payload.paymentMethodLabel
+      ? `Your quotation for "${payload.serviceName}" has been accepted. Payment method: ${payload.paymentMethodLabel}.`
+      : `Your booking for "${payload.serviceName}" has been accepted!`;
+
     await this.deliver({
       userId: payload.targetUserId,
-      type: NotificationType.BOOKING_ACCEPTED,
-      title: 'Booking Accepted 🎉',
-      body: `Your booking for "${payload.serviceName}" has been accepted!`,
+      type: payload.paymentMethodLabel
+        ? NotificationType.BOOKING_QUOTE_CONFIRMED
+        : NotificationType.BOOKING_ACCEPTED,
+      title: payload.paymentMethodLabel ? 'Quotation Accepted 🎉' : 'Booking Accepted 🎉',
+      body,
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
@@ -158,6 +163,7 @@ export class NotificationsListener {
         customerUserId: payload.actorId,
         serviceType: payload.serviceName,
         eventDate: payload.eventDate.toISOString(),
+        paymentMethodLabel: payload.paymentMethodLabel,
       },
     });
   }

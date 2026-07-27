@@ -1,11 +1,17 @@
 // src/modules/bookings/bookings.service.ts
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { PaymentMethod, PaymentStatus } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DeliveryService } from '../delivery/delivery.service';
+import { BulkQuoteDecisionDto, BulkQuotePaymentMethod } from './dto/bulk-quote-decision.dto';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED', 'REJECTED'];
 const PENDING_STATUSES = ['PENDING', 'QUOTE_SENT'];
+const PAYMENT_METHOD_LABELS: Record<BulkQuotePaymentMethod, string> = {
+  BANK_TRANSFER: 'Bank Transfer',
+  CASH: 'Cash - Payment in Progress',
+};
 
 @Injectable()
 export class BookingsService {
@@ -32,36 +38,36 @@ export class BookingsService {
     return payment?.status === 'PAID';
   }
 
-  async tryProgressEvent(eventId: string): Promise<void> {
-    const bookings = await this.prisma.booking.findMany({
-      where: { eventId },
-      select: { id: true, status: true },
-    });
-    if (bookings.length === 0) return;
+  // async tryProgressEvent(eventId: string): Promise<void> {
+  //   const bookings = await this.prisma.booking.findMany({
+  //     where: { eventId },
+  //     select: { id: true, status: true },
+  //   });
+  //   if (bookings.length === 0) return;
 
-    const settledFlags = await Promise.all(
-      bookings.map(async (b) => {
-        if (b.status === 'CONFIRMED') return this.isPaid(b.id);
-        return TERMINAL_STATUSES.includes(b.status) || b.status === 'IN_PROGRESS';
-      }),
-    );
+  //   const settledFlags = await Promise.all(
+  //     bookings.map(async (b) => {
+  //       if (b.status === 'CONFIRMED') return this.isPaid(b.id);
+  //       return TERMINAL_STATUSES.includes(b.status) || b.status === 'IN_PROGRESS';
+  //     }),
+  //   );
 
-    if (!settledFlags.every(Boolean)) return; // still waiting on someone
+  //   if (!settledFlags.every(Boolean)) return; // still waiting on someone
 
-    const toAdvanceIds = bookings
-      .filter((b, i) => b.status === 'CONFIRMED' && settledFlags[i])
-      .map((b) => b.id);
+  //   const toAdvanceIds = bookings
+  //     .filter((b, i) => b.status === 'CONFIRMED' && settledFlags[i])
+  //     .map((b) => b.id);
 
-    if (toAdvanceIds.length === 0) return; // nothing left to flip — event may already be IN_PROGRESS
+  //   if (toAdvanceIds.length === 0) return; // nothing left to flip — event may already be IN_PROGRESS
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.booking.updateMany({
-        where: { id: { in: toAdvanceIds } },
-        data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
-      });
-      await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
-    });
-  }
+  //   await this.prisma.$transaction(async (tx) => {
+  //     await tx.booking.updateMany({
+  //       where: { id: { in: toAdvanceIds } },
+  //       data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
+  //     });
+  //     await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
+  //   });
+  // }
 
   // ─────────────────────────────────────────────────────────────
   // PATCH /bookings/:bookingId/confirm-quote
@@ -97,9 +103,9 @@ export class BookingsService {
     // type doesn't require delivery.
     await this.deliveryService.createIfRequired(bookingId);
 
-    if (booking.eventId) {
-      await this.tryProgressEvent(booking.eventId);
-    }
+    // if (booking.eventId) {
+    //   await this.tryProgressEvent(booking.eventId);
+    // }
 
     const updated = await this.prisma.booking.findUnique({ where: { id: bookingId } });
 
@@ -113,11 +119,7 @@ export class BookingsService {
       eventDate: booking.event.eventDate,
     });
 
-    const message =
-      updated?.status === 'IN_PROGRESS'
-        ? 'All services confirmed and paid — event is now in progress!'
-        : 'Quote confirmed — waiting for payment and/or other services to be confirmed';
-
+    const message = 'Quote confirmed successfully';
     return {
       message,
       data: {
@@ -193,11 +195,11 @@ export class BookingsService {
       }
     });
 
-    if (!newEventStatus) {
-      // Removing this (now-terminal) booking may have been the last thing
-      // blocking the remaining, already-paid siblings from starting.
-      await this.tryProgressEvent(booking.event.id);
-    }
+    // if (!newEventStatus) {
+    //   // Removing this (now-terminal) booking may have been the last thing
+    //   // blocking the remaining, already-paid siblings from starting.
+    //   await this.tryProgressEvent(booking.event.id);
+    // }
 
     const finalEvent = await this.prisma.event.findUnique({ where: { id: booking.event.id } });
 
@@ -235,5 +237,243 @@ export class BookingsService {
         eventStatus: finalEvent?.status,
       },
     };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PATCH /events/:eventId/bookings/quote-decisions
+  // ─────────────────────────────────────────────────────────────
+  async bulkQuoteDecision(customerId: string, eventId: string, dto: BulkQuoteDecisionDto) {
+    if (dto.eventId !== eventId) {
+      throw new BadRequestException('eventId in the request body must match the event in the URL');
+    }
+
+    const acceptedIds = [...new Set(dto.acceptedBookingIds ?? [])];
+    const rejectedIds = [...new Set(dto.rejectedBookingIds ?? [])];
+    const allIds = [...new Set([...acceptedIds, ...rejectedIds])];
+
+    const overlap = acceptedIds.filter((id) => rejectedIds.includes(id));
+    if (overlap.length > 0) {
+      throw new BadRequestException(
+        `A booking cannot appear in both acceptedBookingIds and rejectedBookingIds: ${overlap.join(', ')}`,
+      );
+    }
+
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, customerId: true, name: true, eventDate: true, status: true },
+    });
+    if (!event) throw new NotFoundException('Event not found');
+    if (event.customerId !== customerId) {
+      throw new ForbiddenException('Access denied — not your event');
+    }
+
+    const bookings = await this.prisma.booking.findMany({
+      where: { id: { in: allIds }, eventId },
+      include: {
+        service: { include: { serviceType: { select: { name: true, requiresDeliveryByDefault: true } } } },
+        provider: { include: { user: { select: { id: true } } } },
+        payment: true,
+        event: { select: { eventDate: true, eventLocation: true } },
+      },
+    });
+
+    if (bookings.length !== allIds.length) {
+      const found = new Set(bookings.map((b) => b.id));
+      const missing = allIds.filter((id) => !found.has(id));
+      throw new BadRequestException(
+        `Every booking ID must belong to the specified event. Not found or mismatched: ${missing.join(', ')}`,
+      );
+    }
+
+    const notQuoteSent = bookings.filter((b) => b.status !== 'QUOTE_SENT');
+    if (notQuoteSent.length > 0) {
+      throw new BadRequestException(
+        `Every booking must be in QUOTE_SENT status. Invalid: ${notQuoteSent.map((b) => `${b.id} (${b.status})`).join(', ')}`,
+      );
+    }
+
+    const acceptedBookings = bookings.filter((b) => acceptedIds.includes(b.id));
+    const rejectedBookings = bookings.filter((b) => rejectedIds.includes(b.id));
+    const method = dto.method as BulkQuotePaymentMethod | undefined;
+    const paymentMethodLabel = method ? PAYMENT_METHOD_LABELS[method] : undefined;
+
+    const alreadyPaid = acceptedBookings.filter((b) => b.payment);
+    if (alreadyPaid.length > 0) {
+      throw new BadRequestException(
+        `Payment already exists for booking(s): ${alreadyPaid.map((b) => b.id).join(', ')}`,
+      );
+    }
+
+    let eventCancelled = false;
+
+    await this.prisma.$transaction(async (tx) => {
+      for (const booking of acceptedBookings) {
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: { status: 'CONFIRMED' },
+        });
+
+        const subtotalAmount = booking.finalAmount ?? booking.totalAmount;
+        const isBankTransfer = method === 'BANK_TRANSFER';
+
+        await tx.payment.create({
+          data: {
+            bookingId: booking.id,
+            payerId: customerId,
+            amount: subtotalAmount,
+            subtotalAmount,
+            method: method as PaymentMethod,
+            status: isBankTransfer ? PaymentStatus.PAID : PaymentStatus.PROCESSING,
+            ...(isBankTransfer && {
+              paidAt: new Date(),
+              providerReference: `MOCK-BT-${booking.id}-${Date.now()}`,
+            }),
+          },
+        });
+
+        if (booking.service.serviceType.requiresDeliveryByDefault) {
+          const existingDelivery = await tx.delivery.findUnique({ where: { bookingId: booking.id } });
+          if (!existingDelivery) {
+            await tx.delivery.create({
+              data: {
+                bookingId: booking.id,
+                status: 'SCHEDULED',
+                address: booking.event?.eventLocation ?? '',
+                scheduledAt: booking.event?.eventDate,
+              },
+            });
+          }
+        }
+      }
+
+      const rejectionReason = dto.rejectionReason?.trim();
+      for (const booking of rejectedBookings) {
+        await tx.booking.update({
+          where: { id: booking.id },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledBy: 'CUSTOMER',
+            cancellationReason: rejectionReason || 'Customer rejected the quote',
+            ...(rejectionReason && { rejectionReason }),
+          },
+        });
+      }
+
+      const eventBookings = await tx.booking.findMany({
+        where: { eventId },
+        select: { status: true },
+      });
+
+      const allCancelledOrRejected = eventBookings.every(
+        (b) => b.status === 'CANCELLED' || b.status === 'REJECTED',
+      );
+
+      if (allCancelledOrRejected && eventBookings.length > 0) {
+        await tx.event.update({
+          where: { id: eventId },
+          data: { status: 'CANCELLED' },
+        });
+        eventCancelled = true;
+      }
+    });
+
+    for (const booking of acceptedBookings) {
+      this.domainEventBus.bookingAccepted({
+        actorId: customerId,
+        targetUserId: booking.provider.user.id,
+        entityId: booking.id,
+        bookingId: booking.id,
+        serviceName: booking.service.serviceType.name,
+        eventDate: event.eventDate,
+        paymentMethodLabel,
+      });
+    }
+
+    const rejectionNotificationReason = dto.rejectionReason?.trim();
+    for (const booking of rejectedBookings) {
+      this.domainEventBus.bookingRejected({
+        actorId: customerId,
+        targetUserId: booking.provider.user.id,
+        entityId: booking.id,
+        bookingId: booking.id,
+        serviceName: booking.service.serviceType.name,
+        rejectionReason: rejectionNotificationReason || 'Customer rejected the quote',
+      });
+    }
+
+    if (eventCancelled) {
+      this.domainEventBus.eventCancelled({
+        actorId: customerId,
+        targetUserId: customerId,
+        entityId: eventId,
+        eventId,
+        eventName: event.name,
+        reason: 'all services were rejected or cancelled',
+      });
+    }
+
+    // if (method === 'BANK_TRANSFER') {
+    //   await this.tryProgressEvent(eventId);
+    // }
+
+    const message = await this.buildBulkDecisionMessage(eventId, event.eventDate, eventCancelled);
+
+    const updatedBookings = await this.prisma.booking.findMany({
+      where: { id: { in: allIds } },
+      select: { id: true, status: true },
+    });
+
+    const finalEvent = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { status: true },
+    });
+
+    return {
+      message,
+      data: {
+        eventId,
+        eventStatus: finalEvent?.status,
+        acceptedBookingIds: acceptedIds,
+        rejectedBookingIds: rejectedIds,
+        bookings: updatedBookings,
+      },
+    };
+  }
+
+  private async buildBulkDecisionMessage(
+    eventId: string,
+    eventDate: Date,
+    eventCancelled: boolean,
+  ): Promise<string> {
+    if (eventCancelled) {
+      return 'All bookings were cancelled or rejected — the event has been cancelled.';
+    }
+
+    const messages: string[] = ['Quote decisions processed successfully.'];
+
+    const allFinalized = await this.evaluateEventFinalization(eventId);
+    if (allFinalized) {
+      messages.push(
+        'All bookings have been finalized. No further booking cancellations are allowed. ' +
+          'Please ensure all payments are completed before confirming the event.',
+      );
+    }
+
+    const daysUntilEvent = (eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    if (daysUntilEvent < 3 && daysUntilEvent >= 0) {
+      messages.push('You can still add more bookings to this event.');
+    }
+
+    return messages.join(' ');
+  }
+
+  private async evaluateEventFinalization(eventId: string): Promise<boolean> {
+    const bookings = await this.prisma.booking.findMany({
+      where: { eventId },
+      select: { status: true },
+    });
+    if (bookings.length === 0) return false;
+    return bookings.every((b) => !PENDING_STATUSES.includes(b.status));
   }
 }

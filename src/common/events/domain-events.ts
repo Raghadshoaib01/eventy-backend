@@ -101,6 +101,8 @@ export interface BookingAcceptedPayload extends BaseDomainEventPayload {
   bookingId: string;
   serviceName: string;
   eventDate: Date;
+  /** Human-readable payment method label for provider notifications */
+  paymentMethodLabel?: string;
 }
 
 export interface BookingRejectedPayload extends BaseDomainEventPayload {

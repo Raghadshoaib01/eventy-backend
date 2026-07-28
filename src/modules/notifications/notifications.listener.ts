@@ -211,12 +211,15 @@ export class NotificationsListener {
       userId: payload.targetUserId,
       type: NotificationType.BOOKING_CANCELLED,
       title: 'Booking Cancelled',
-      body: `Your booking for "${payload.serviceName}" has been cancelled.`,
+      body: payload.reason
+        ? `Your booking for "${payload.serviceName}" has been cancelled. ${payload.reason}`
+        : `Your booking for "${payload.serviceName}" has been cancelled.`,
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
         targetUserId: payload.targetUserId,
         serviceType: payload.serviceName,
+        reason: payload.reason,
       },
     });
   }

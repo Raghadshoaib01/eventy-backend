@@ -5,10 +5,11 @@ import { ProviderBookingsController } from './provider-bookings.controller';
 import { ProviderBookingsService } from './provider-bookings.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DeliveryModule } from '../delivery/delivery.module';
+import { BookingCleanupService } from './booking-cleanup.service';
 
 @Module({
   imports: [DeliveryModule],
-  providers: [BookingsService,ProviderBookingsService, DomainEventBus],
+  providers: [BookingsService,ProviderBookingsService, DomainEventBus,BookingCleanupService],
   controllers: [BookingsController,ProviderBookingsController],
   exports: [BookingsService],
 })

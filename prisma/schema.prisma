@@ -266,7 +266,6 @@ enum ComplaintTargetType {
 // =======================
 enum PaymentMethod {
   CASH
-  CARD
   BANK_TRANSFER
 }
 

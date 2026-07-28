@@ -28,7 +28,7 @@ import {
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { EventService } from './event.service';
 import { BookingsService } from '../bookings/bookings.service';
-import { CreateEventDto } from './dto/create-event.dto';
+import { CreateEventDto, ServiceSelectionDto } from './dto/create-event.dto';
 import { CurrentUser } from 'src/common/decorators/current-user.decorator';
 import { JwtPayload } from 'src/common/helpers/token.helper';
 import { GetEventsDto } from './dto/get-events.dto';
@@ -36,6 +36,7 @@ import { Audit } from 'src/common/decorators/audit.decorator';
 import { AuditAction, UserRole } from '@prisma/client';
 import { BulkQuoteDecisionDto } from '../bookings/dto/bulk-quote-decision.dto';
 import { Roles } from 'src/common/decorators/roles.decorator';
+import { CancelEventDto } from './dto/cancel-event.dto';
 
 @ApiTags('Events')
 @ApiBearerAuth('JWT-auth')
@@ -107,41 +108,6 @@ export class EventController {
     return this.bookingsService.bulkQuoteDecision(req.user.sub, eventId, dto);
   }
 
-
-@ApiOperation({
-  summary: 'Start an event',
-  description:
-    'Starts an event manually by the customer. The event can start only when all bookings are finalized, at least one booking is CONFIRMED and PAID, and no booking remains in PENDING, QUOTE_SENT, IN_PROGRESS, or COMPLETED status.',
-})
-@ApiParam({
-  name: 'eventId',
-  type: String,
-  format: 'uuid',
-  description: 'Event ID',
-})
-@ApiOkResponse({description: 'Event started successfully.' })
-@ApiBadRequestResponse({
-  description:
-    'Event cannot be started because one or more business rules are violated.',
-})
-@ApiUnauthorizedResponse({
-  description: 'User is not authenticated.',
-})
-@ApiForbiddenResponse({
-  description: 'The event does not belong to the current customer.',
-})
-@ApiNotFoundResponse({
-  description: 'Event not found.',
-})
-  @Patch(':eventId/start')
-@Roles(UserRole.CUSTOMER)
-startEvent(
-  @CurrentUser() user,
-  @Param('eventId', ParseUUIDPipe) eventId: string,
-) {
-  return this.eventService.startEvent(user.id, eventId);
-}
-
   @Get()
   @ApiOperation({
     summary: 'List events',
@@ -193,5 +159,38 @@ startEvent(
   @ApiResponse({ status: 404, description: 'Event not found' })
   unarchiveEvent(@CurrentUser() user: JwtPayload, @Param('eventId') eventId: string) {
     return this.eventService.unarchiveEvent(user, eventId);
+  }
+
+  // src/modules/event/event.controller.ts
+  @Post(':eventId/bookings')
+  @ApiOperation({ summary: 'Add a new service booking to an active/in-progress event (>4 days before eventDate)' })
+  @ApiParam({ name: 'eventId', description: 'Event UUID' })
+  addServiceToEvent(@Request() req, @Param('eventId') eventId: string, @Body() dto: ServiceSelectionDto) {
+    return this.eventService.addServiceToEvent(req.user.sub, eventId, dto);
+  }
+
+  // ────────────────────────────────────────────
+  // PATCH /events/:eventId/cancel
+  // ────────────────────────────────────────────
+  @Patch(':eventId/cancel')
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.BOOKING_CANCEL, entity: 'Event', entityIdKey: 'eventId' })
+  @ApiOperation({
+    summary: 'Cancel an event',
+    description:
+      'Allowed only if every booking is CANCELLED, REJECTED, PENDING, QUOTE_SENT, ' +
+      'or CONFIRMED-but-unpaid. Blocked if any booking is IN_PROGRESS, COMPLETED, or already paid.',
+  })
+  @ApiParam({ name: 'eventId', description: 'Event UUID' })
+  @ApiResponse({ status: 200, description: 'Event cancelled successfully' })
+  @ApiResponse({ status: 400, description: 'One or more bookings are already in progress, completed, or paid' })
+  @ApiResponse({ status: 403, description: 'Access denied — not your event' })
+  @ApiResponse({ status: 404, description: 'Event not found' })
+  cancelEvent(
+    @CurrentUser() user: JwtPayload,
+    @Param('eventId') eventId: string,
+    @Body() dto: CancelEventDto,
+  ) {
+    return this.eventService.cancelEvent(user.sub, eventId, dto);
   }
 }

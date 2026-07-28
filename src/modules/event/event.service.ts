@@ -8,12 +8,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
-import { CreateEventDto } from './dto/create-event.dto';
+import { CreateEventDto, ServiceSelectionDto } from './dto/create-event.dto';
 import { BookingStatus, Prisma, UserRole } from '@prisma/client';
 import { JwtPayload } from 'src/common/helpers/token.helper';
 import { GetEventsDto } from './dto/get-events.dto';
 import { isRangeWithinWindow, rangesOverlap } from 'src/common/helpers/time.helper';
 import { formatBookingsList } from 'src/common/helpers/booking-response.helper';
+import { CancelEventDto } from './dto/cancel-event.dto';
 
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
@@ -401,99 +402,7 @@ export class EventService {
       },
     };
   }
-
-  // ─────────────────────────────────────────────────────────────
  
-  // ─────────────────────────────────────────────────────────────
-  // PATCH /events/:eventId/start
-  //
-  // Explicit customer action replacing the old automatic progression.
-  // Event moves to IN_PROGRESS only when:
-  //   - at least one booking is CONFIRMED + PAID, and
-  //   - every other booking is CONFIRMED(+PAID), CANCELLED, or REJECTED
-  //     (i.e. none left PENDING, QUOTE_SENT, IN_PROGRESS, or COMPLETED).
-  // ─────────────────────────────────────────────────────────────
-  async startEvent(customerId: string, eventId: string) {
-    const event = await this.prisma.event.findUnique({
-      where: { id: eventId },
-      select: { id: true, customerId: true, name: true, status: true },
-    });
-    if (!event) throw new NotFoundException('Event not found');
-    if (event.customerId !== customerId) {
-      throw new ForbiddenException('Access denied — not your event');
-    }
-
-    const bookings = await this.prisma.booking.findMany({
-      where: { eventId },
-      include: {
-        payment: { select: { status: true } },
-        service: { include: { serviceType: { select: { name: true } } } },
-        provider: { include: { user: { select: { id: true } } } },
-      },
-    });
-
-    if (bookings.length === 0) {
-      throw new BadRequestException('This event has no bookings to start');
-    }
-
-    const disallowedStatuses = ['PENDING', 'QUOTE_SENT', 'IN_PROGRESS', 'COMPLETED'];
-    const blocking = bookings.filter((b) => disallowedStatuses.includes(b.status));
-    if (blocking.length > 0) {
-      throw new BadRequestException(
-        `Cannot start event — the following bookings are not finalized yet: ${blocking
-          .map((b) => `${b.id} (${b.status})`)
-          .join(', ')}`,
-      );
-    }
-
-    const confirmedBookings = bookings.filter((b) => b.status === 'CONFIRMED');
-    const confirmedUnpaid = confirmedBookings.filter((b) => b.payment?.status !== 'PAID');
-    if (confirmedUnpaid.length > 0) {
-      throw new BadRequestException(
-        `Cannot start event — the following confirmed bookings are not paid yet: ${confirmedUnpaid
-          .map((b) => b.id)
-          .join(', ')}`,
-      );
-    }
-
-    if (confirmedBookings.length === 0) {
-      throw new BadRequestException(
-        'Cannot start event — at least one booking must be CONFIRMED and paid',
-      );
-    }
-
-    const confirmedIds = confirmedBookings.map((b) => b.id);
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.booking.updateMany({
-        where: { id: { in: confirmedIds } },
-        data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
-      });
-      await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
-    });
-
-    // Notify every affected provider that their booking is now IN_PROGRESS.
-    // todo : new notification that the event is started and all bookings are in progress
-    for (const booking of confirmedBookings) {
-      this.domainEventBus.bookingAccepted({
-        actorId: customerId,
-        targetUserId: booking.provider.user.id,
-        entityId: booking.id,
-        bookingId: booking.id,
-        serviceName: booking.service.serviceType.name,
-        eventDate: new Date(),
-      });
-    }
-
-    return {
-      message: 'Event started successfully — all confirmed bookings are now in progress',
-      data: {
-        eventId,
-        eventStatus: 'IN_PROGRESS',
-      },
-    };
-  }
-
   // ─────────────────────────────────────────────────────────────
   // GET /events/:eventId/bookings
   // ─────────────────────────────────────────────────────────────
@@ -665,4 +574,291 @@ export class EventService {
     return this.setArchived(user, eventId, false);
   }
 
+  // src/modules/event/event.service.ts
+
+  // ─────────────────────────────────────────────────────────────
+  // POST /events/:eventId/bookings
+  //
+  // Adds one more service booking to an existing ACTIVE/IN_PROGRESS event.
+  // Only allowed while more than 4 days remain before eventDate — this
+  // protects providers from last-minute additions they can't reasonably
+  // fulfil, and mirrors the same lead-time discipline recommended for
+  // event creation (see notes).
+  // ─────────────────────────────────────────────────────────────
+  async addServiceToEvent(customerId: string, eventId: string, dto: ServiceSelectionDto) {
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) throw new NotFoundException('Event not found');
+    if (event.customerId !== customerId) {
+      throw new ForbiddenException('Access denied — not your event');
+    }
+    if (!['DRAFT', 'IN_PROGRESS'].includes(event.status)) {
+      throw new BadRequestException(`Cannot add a service to an event that is ${event.status}`);
+    }
+
+    const MIN_LEAD_DAYS = 4;
+    const daysUntilEvent = (event.eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
+    if (daysUntilEvent <= MIN_LEAD_DAYS) {
+      throw new BadRequestException(
+        `New services can only be added while more than ${MIN_LEAD_DAYS} days remain before the event date`,
+      );
+    }
+
+    const svc = await this.prisma.service.findFirst({
+      where: { id: dto.serviceId, approvalStatus: 'ACTIVE', isCompleted: true, isPackaged: false },
+      include: {
+        serviceType: true,
+        provider: { include: { user: { select: { id: true } } } },
+        subServices: { where: { isAvailable: true, approvalStatus: 'ACTIVE' } },
+        availability: { include: { workingDays: true, timeSlots: true } },
+      },
+    });
+    if (!svc) throw new NotFoundException('Service not found or not active');
+
+    const DAY_NAMES = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    const dayOfWeek = DAY_NAMES[event.eventDate.getDay()];
+    const startOfDay = new Date(event.eventDate); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(event.eventDate); endOfDay.setHours(23, 59, 59, 999);
+
+    const dayAvailabilities = svc.availability.filter((a) =>
+      a.workingDays.some((d) => d.dayOfWeek === dayOfWeek),
+    );
+    if (dayAvailabilities.length === 0) {
+      throw new BadRequestException(`Service "${svc.serviceType.name}" does not work on ${dayOfWeek}`);
+    }
+
+    let matched: (typeof dayAvailabilities)[number] | undefined;
+    let matchedSlot: any;
+
+    if (dto.timeSlotId) {
+      matched = dayAvailabilities.find((a) => a.hasSlots && a.timeSlots.some((t) => t.id === dto.timeSlotId));
+      if (!matched) {
+        throw new BadRequestException(
+          `Selected time slot does not belong to service "${svc.serviceType.name}" on ${dayOfWeek}`,
+        );
+      }
+      matchedSlot = matched.timeSlots.find((t) => t.id === dto.timeSlotId)!;
+      if (!isRangeWithinWindow(event.eventStartTime, event.eventEndTime, matchedSlot.fromTime, matchedSlot.toTime)) {
+        throw new BadRequestException(
+          `Event time must be fully within the selected slot (${matchedSlot.fromTime}-${matchedSlot.toTime})`,
+        );
+      }
+    } else {
+      matched = dayAvailabilities.find((a) => !a.hasSlots);
+      if (!matched) {
+        throw new BadRequestException(`Service "${svc.serviceType.name}" requires selecting a timeSlotId on ${dayOfWeek}`);
+      }
+      if (!isRangeWithinWindow(event.eventStartTime, event.eventEndTime, matched.workFromTime, matched.workToTime)) {
+        throw new BadRequestException(
+          `Event time (${event.eventStartTime}-${event.eventEndTime}) is outside working hours (${matched.workFromTime}-${matched.workToTime})`,
+        );
+      }
+    }
+
+    if (event.numberOfGuests && svc.maxCapacity && event.numberOfGuests > svc.maxCapacity) {
+      throw new BadRequestException(
+        `Service "${svc.serviceType.name}" cannot accommodate ${event.numberOfGuests} guests (max: ${svc.maxCapacity})`,
+      );
+    }
+
+    const HALL_SOUND = ['HALL', 'SOUND'];
+    const requiresItems = !HALL_SOUND.includes(svc.serviceType.name);
+    if (requiresItems && (!dto.items || dto.items.length === 0)) {
+      throw new BadRequestException(`Service "${svc.serviceType.name}" requires at least one sub-service item`);
+    }
+    if (!requiresItems && dto.items && dto.items.length > 0) {
+      throw new BadRequestException(`Service "${svc.serviceType.name}" does not accept sub-service items — remove the items array`);
+    }
+    for (const item of dto.items ?? []) {
+      if (!svc.subServices.find((ss) => ss.id === item.subServiceId)) {
+        throw new BadRequestException(`SubService "${item.subServiceId}" not found or not available in service "${svc.serviceType.name}"`);
+      }
+    }
+
+    const booking = await this.prisma.$transaction(async (tx) => {
+      const duplicate = await tx.booking.findFirst({
+        where: {
+          customerId, serviceId: dto.serviceId,
+          status: { in: ACTIVE_BOOKING_STATUSES },
+          event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+        },
+      });
+      if (duplicate) {
+        throw new ConflictException(`You already have an active booking for "${svc.serviceType.name}" on this date`);
+      }
+
+      const blockedSlots = await tx.blockedSlot.findMany({
+        where: { serviceId: svc.id, date: { gte: startOfDay, lte: endOfDay } },
+      });
+      const isBlocked = blockedSlots.some((b) =>
+        !b.fromTime || !b.toTime
+          ? true
+          : rangesOverlap(event.eventStartTime, event.eventEndTime, b.fromTime, b.toTime),
+      );
+      if (isBlocked) {
+        throw new ConflictException(`Service "${svc.serviceType.name}" is unavailable at the requested time on this date`);
+      }
+
+      const availabilityBookingCount = await tx.booking.count({
+        where: {
+          serviceId: svc.id,
+          status: { in: ACTIVE_BOOKING_STATUSES },
+          event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+          ...(matched!.hasSlots ? { timeSlot: { availabilityId: matched!.id } } : { timeSlotId: null }),
+        },
+      });
+      if (availabilityBookingCount >= matched!.capacity) {
+        throw new ConflictException(`Service "${svc.serviceType.name}" has reached its daily capacity for the requested time window`);
+      }
+
+      if (matchedSlot) {
+        const slotBookingCount = await tx.booking.count({
+          where: {
+            timeSlotId: matchedSlot.id,
+            status: { in: ACTIVE_BOOKING_STATUSES },
+            event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+          },
+        });
+        if (slotBookingCount >= matchedSlot.capacity) {
+          throw new ConflictException(`Selected time slot for "${svc.serviceType.name}" is fully booked`);
+        }
+      }
+
+      let totalAmount = 0;
+      const itemsData: Array<{ subServiceId: string; quantity: number; unitPrice: number; totalPrice: number }> = [];
+
+      for (const item of dto.items ?? []) {
+        const sub = svc.subServices.find((ss) => ss.id === item.subServiceId)!;
+        const existingQtyAgg = await tx.bookingItem.aggregate({
+          _sum: { quantity: true },
+          where: {
+            subServiceId: item.subServiceId,
+            booking: { status: { in: ACTIVE_BOOKING_STATUSES }, event: { eventDate: { gte: startOfDay, lte: endOfDay } } },
+          },
+        });
+        const existingQty = existingQtyAgg._sum.quantity ?? 0;
+        if (existingQty + item.quantity > sub.dailyCapacity) {
+          throw new ConflictException(`SubService "${sub.name}" exceeds its daily capacity (${sub.dailyCapacity}) for this date`);
+        }
+        const totalPrice = sub.pricePerUnit * item.quantity;
+        totalAmount += totalPrice;
+        itemsData.push({ subServiceId: item.subServiceId, quantity: item.quantity, unitPrice: sub.pricePerUnit, totalPrice });
+      }
+
+      if (itemsData.length === 0 && svc.price) totalAmount = svc.price;
+
+      return tx.booking.create({
+        data: {
+          eventId, customerId, providerId: svc.providerId, serviceId: dto.serviceId,
+          timeSlotId: dto.timeSlotId ?? null, totalAmount, status: 'PENDING',
+          items: { create: itemsData },
+        },
+        include: { items: true },
+      });
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+
+    this.domainEventBus.bookingCreated({
+      actorId: customerId,
+      targetUserId: svc.provider.user.id,
+      entityId: booking.id,
+      bookingId: booking.id,
+      serviceName: svc.serviceType.name,
+      eventDate: event.eventDate,
+    });
+
+    return { message: 'Service added to event successfully — awaiting provider response', data: booking };
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PATCH /events/:eventId/cancel
+  //
+  // Allowed only when NO booking has moved past the point of a real,
+  // completed payment or provider fulfilment — i.e. every booking is
+  // CANCELLED, REJECTED, PENDING, QUOTE_SENT, or CONFIRMED-but-unpaid.
+  // Any booking that is IN_PROGRESS, COMPLETED, or CONFIRMED+PAID blocks
+  // the whole cancellation (those need a refund flow, not a plain cancel).
+  // ─────────────────────────────────────────────────────────────
+  async cancelEvent(customerId: string, eventId: string, dto: CancelEventDto) {
+    const event = await this.prisma.event.findUnique({
+      where: { id: eventId },
+      select: { id: true, customerId: true, name: true, status: true },
+    });
+    if (!event) throw new NotFoundException('Event not found');
+    if (event.customerId !== customerId) {
+      throw new ForbiddenException('Access denied — not your event');
+    }
+    if (['CANCELLED', 'COMPLETED'].includes(event.status)) {
+      throw new BadRequestException(`Event is already ${event.status}`);
+    }
+
+    const bookings = await this.prisma.booking.findMany({
+      where: { eventId },
+      include: {
+        payment: { select: { status: true } },
+        service: { include: { serviceType: { select: { name: true } } } },
+        provider: { include: { user: { select: { id: true } } } },
+      },
+    });
+
+    if (bookings.length === 0) {
+      throw new BadRequestException('This event has no bookings');
+    }
+
+    const blocking = bookings.filter((b) => {
+      if (b.status === 'IN_PROGRESS' || b.status === 'COMPLETED') return true;
+      if (b.status === 'CONFIRMED' && b.payment?.status === 'PAID') return true;
+      return false;
+    });
+
+    if (blocking.length > 0) {
+      throw new BadRequestException(
+        `Cannot cancel event — the following bookings are already in progress, completed, or paid: ${blocking
+          .map((b) => `${b.id} (${b.status}${b.payment?.status === 'PAID' ? ', PAID' : ''})`)
+          .join(', ')}`,
+      );
+    }
+
+    const toCancel = bookings.filter((b) => !['CANCELLED', 'REJECTED'].includes(b.status));
+    const reason = dto.reason?.trim();
+
+    await this.prisma.$transaction(async (tx) => {
+      if (toCancel.length > 0) {
+        await tx.booking.updateMany({
+          where: { id: { in: toCancel.map((b) => b.id) } },
+          data: {
+            status: 'CANCELLED',
+            cancelledAt: new Date(),
+            cancelledBy: 'CUSTOMER',
+            cancellationReason: reason || 'Event cancelled by customer',
+          },
+        });
+      }
+
+      await tx.event.update({
+        where: { id: eventId },
+        data: { status: 'CANCELLED' },
+      });
+    });
+
+    for (const booking of toCancel) {
+      this.domainEventBus.bookingCancelled({
+        actorId: customerId,
+        targetUserId: booking.provider.user.id,
+        entityId: booking.id,
+        bookingId: booking.id,
+        serviceName: booking.service.serviceType.name,
+        reason: reason
+          ? `The customer cancelled the event. Reason: ${reason}`
+          : 'The customer cancelled the event.',
+      });
+    }
+
+    return {
+      message: 'Event cancelled successfully',
+      data: {
+        eventId,
+        eventStatus: 'CANCELLED',
+        cancelledBookingIds: toCancel.map((b) => b.id),
+      },
+    };
+  }
 }

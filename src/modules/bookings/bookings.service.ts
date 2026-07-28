@@ -38,36 +38,36 @@ export class BookingsService {
     return payment?.status === 'PAID';
   }
 
-  // async tryProgressEvent(eventId: string): Promise<void> {
-  //   const bookings = await this.prisma.booking.findMany({
-  //     where: { eventId },
-  //     select: { id: true, status: true },
-  //   });
-  //   if (bookings.length === 0) return;
+  async tryProgressEvent(eventId: string): Promise<void> {
+    const bookings = await this.prisma.booking.findMany({
+      where: { eventId },
+      select: { id: true, status: true },
+    });
+    if (bookings.length === 0) return;
 
-  //   const settledFlags = await Promise.all(
-  //     bookings.map(async (b) => {
-  //       if (b.status === 'CONFIRMED') return this.isPaid(b.id);
-  //       return TERMINAL_STATUSES.includes(b.status) || b.status === 'IN_PROGRESS';
-  //     }),
-  //   );
+    const settledFlags = await Promise.all(
+      bookings.map(async (b) => {
+        if (b.status === 'CONFIRMED') return this.isPaid(b.id);
+        return TERMINAL_STATUSES.includes(b.status) || b.status === 'IN_PROGRESS';
+      }),
+    );
 
-  //   if (!settledFlags.every(Boolean)) return; // still waiting on someone
+    if (!settledFlags.every(Boolean)) return; // still waiting on someone
 
-  //   const toAdvanceIds = bookings
-  //     .filter((b, i) => b.status === 'CONFIRMED' && settledFlags[i])
-  //     .map((b) => b.id);
+    const toAdvanceIds = bookings
+      .filter((b, i) => b.status === 'CONFIRMED' && settledFlags[i])
+      .map((b) => b.id);
 
-  //   if (toAdvanceIds.length === 0) return; // nothing left to flip — event may already be IN_PROGRESS
+    if (toAdvanceIds.length === 0) return; // nothing left to flip — event may already be IN_PROGRESS
 
-  //   await this.prisma.$transaction(async (tx) => {
-  //     await tx.booking.updateMany({
-  //       where: { id: { in: toAdvanceIds } },
-  //       data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
-  //     });
-  //     await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
-  //   });
-  // }
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.updateMany({
+        where: { id: { in: toAdvanceIds } },
+        data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
+      });
+      await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
+    });
+  }
 
   // ─────────────────────────────────────────────────────────────
   // PATCH /bookings/:bookingId/confirm-quote
@@ -103,9 +103,9 @@ export class BookingsService {
     // type doesn't require delivery.
     await this.deliveryService.createIfRequired(bookingId);
 
-    // if (booking.eventId) {
-    //   await this.tryProgressEvent(booking.eventId);
-    // }
+    if (booking.eventId) {
+      await this.tryProgressEvent(booking.eventId);
+    }
 
     const updated = await this.prisma.booking.findUnique({ where: { id: bookingId } });
 
@@ -413,9 +413,9 @@ export class BookingsService {
       });
     }
 
-    // if (method === 'BANK_TRANSFER') {
-    //   await this.tryProgressEvent(eventId);
-    // }
+    if (method === 'BANK_TRANSFER') {
+      await this.tryProgressEvent(eventId);
+    }
 
     const message = await this.buildBulkDecisionMessage(eventId, event.eventDate, eventCancelled);
 
@@ -461,7 +461,7 @@ export class BookingsService {
     }
 
     const daysUntilEvent = (eventDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24);
-    if (daysUntilEvent < 3 && daysUntilEvent >= 0) {
+    if ( daysUntilEvent >= 4) {
       messages.push('You can still add more bookings to this event.');
     }
 
@@ -476,4 +476,47 @@ export class BookingsService {
     if (bookings.length === 0) return false;
     return bookings.every((b) => !PENDING_STATUSES.includes(b.status));
   }
+
+  // src/modules/bookings/bookings.service.ts
+
+  /**
+   * Called once a booking's payment clears. Policy (revised): the event is
+   * confirmed (ACTIVE → IN_PROGRESS) on the FIRST booking that gets paid,
+   * not once every sibling is settled. That specific booking also flips
+   * from CONFIRMED to IN_PROGRESS immediately; siblings keep their own
+   * independent lifecycle until they, too, get paid.
+   */
+  async progressBookingAndEvent(bookingId: string, eventId: string): Promise<void> {
+    const booking = await this.prisma.booking.findUnique({
+      where: { id: bookingId },
+      include: {
+        service: { include: { serviceType: { select: { name: true } } } },
+        provider: { include: { user: { select: { id: true } } } },
+      },
+    });
+    if (!booking || booking.status !== 'CONFIRMED') return;
+
+    const event = await this.prisma.event.findUnique({ where: { id: eventId } });
+    if (!event) return;
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.booking.update({
+        where: { id: bookingId },
+        data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
+      });
+      if (event.status === 'DRAFT') {
+        await tx.event.update({ where: { id: eventId }, data: { status: 'IN_PROGRESS' } });
+      }
+    });
+
+    this.domainEventBus.bookingAccepted({
+      actorId: booking.customerId,
+      targetUserId: booking.provider.user.id,
+      entityId: booking.id,
+      bookingId: booking.id,
+      serviceName: booking.service.serviceType.name,
+      eventDate: event.eventDate,
+    });
+  }
+  
 }

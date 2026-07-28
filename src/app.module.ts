@@ -34,6 +34,7 @@ import { FavoritesModule } from './modules/favorites/favorites.module';
 import { ReviewsModule } from './modules/reviews/reviews.module';
 import { ComplaintsModule } from './modules/complaints/complaints.module';
 import { DeliveryModule } from './modules/delivery/delivery.module';
+import { ScheduleModule } from '@nestjs/schedule';
 
 @Module({
   imports: [
@@ -42,6 +43,7 @@ import { DeliveryModule } from './modules/delivery/delivery.module';
       load: [redisConfig], 
      }),
 
+    ScheduleModule.forRoot(),
     // Event-driven architecture bus
     EventEmitterModule.forRoot({
       wildcard: false,

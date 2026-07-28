@@ -119,6 +119,7 @@ export interface BookingCompletedPayload extends BaseDomainEventPayload {
 export interface BookingCancelledPayload extends BaseDomainEventPayload {
   bookingId: string;
   serviceName: string;
+   reason?: string;
 }
 
 export interface ProviderApprovedPayload extends BaseDomainEventPayload {

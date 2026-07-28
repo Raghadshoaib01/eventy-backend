@@ -15,6 +15,7 @@ import {
 } from 'class-validator';
 import { EventType } from '@prisma/client';
 import { IsTodayOrFuture } from 'src/common/validators/future-date.validator';
+import { IsAtLeastDaysInFuture } from 'src/common/validators/min-lead-time.validator';
 
 export class BookingItemInputDto {
   @ApiProperty({ example: 'uuid-of-subservice' })
@@ -72,6 +73,7 @@ export class CreateEventDto {
   @IsTodayOrFuture({
   message: 'Event date cannot be in the past',
 })
+  //@IsAtLeastDaysInFuture(5, { message: 'Event date must be at least 5 days from today' })
   eventDate: string;
 
   @ApiProperty({ example: '18:00' })

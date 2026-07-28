@@ -191,7 +191,7 @@ export class PaymentsService {
     if (payment.method !== PaymentMethod.CASH) {
       throw new BadRequestException('Only cash payments can be confirmed this way');
     }
-    if (payment.status !== PaymentStatus.PENDING) {
+    if (payment.status !== PaymentStatus.PROCESSING) {
       throw new BadRequestException(`Payment cannot be confirmed while it is ${payment.status}`);
     }
 
@@ -238,9 +238,9 @@ export class PaymentsService {
     if (booking.packageBookingId) {
       await this.packagesService.tryProgressPackageBooking(booking.packageBookingId);
     }
-    //  else if (booking.eventId) {
-    //   await this.bookingsService.tryProgressEvent(booking.eventId);
-    // }
+     else if (booking.eventId) {
+      await this.bookingsService.tryProgressEvent(booking.eventId);
+    }
 
     return paid;
   }

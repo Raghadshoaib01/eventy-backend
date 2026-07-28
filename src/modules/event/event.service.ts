@@ -219,7 +219,7 @@ export class EventService {
             eventLocation: dto.eventLocation,
             numberOfGuests: dto.numberOfGuests,
             customerNotes: dto.customerNotes,
-            status: 'ACTIVE',
+            status: 'DRAFT',
           },
         });
 

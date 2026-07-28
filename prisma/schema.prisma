@@ -164,7 +164,6 @@ enum BookingStatus {
 
 enum EventStatus {
   DRAFT
-  ACTIVE
   IN_PROGRESS
   COMPLETED
   CANCELLED

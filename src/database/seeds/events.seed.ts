@@ -205,7 +205,7 @@ export async function seedEvents(
           eventLocation: 'Royal Events Venue, Amman',
           numberOfGuests: 400,
           customerNotes: 'Large wedding, need the grand ballroom.',
-          status: EventStatus.ACTIVE,
+          status: EventStatus.DRAFT,
         },
       }));
 
@@ -250,7 +250,7 @@ export async function seedEvents(
           eventLocation: 'Garden Palace Venue, Jerash',
           numberOfGuests: 120,
           customerNotes: 'Intimate engagement in a garden setting.',
-          status: EventStatus.ACTIVE,
+          status: EventStatus.DRAFT,
         },
       }));
 
@@ -311,7 +311,7 @@ export async function seedEvents(
           eventLocation: 'Private Villa, Amman',
           numberOfGuests: 60,
           customerNotes: 'House birthday party, need food and a photographer.',
-          status: EventStatus.ACTIVE,
+          status: EventStatus.DRAFT,
         },
       }));
 

@@ -167,13 +167,13 @@ export class BookingsService {
     );
 
     // All bookings (including this one) terminal → event is fully cancelled.
-    // Any sibling still pending/quote_sent → event stays ACTIVE.
+    // Any sibling still pending/quote_sent → event stays DRAFT.
     // Otherwise remaining siblings are CONFIRMED (pending payment) or
     // IN_PROGRESS → tryProgressEvent below decides if they can now advance.
     const newEventStatus = allSiblingsTerminal
       ? 'CANCELLED'
       : hasPendingSibling
-        ? 'ACTIVE'
+        ? 'DRAFT'
         : undefined; // let tryProgressEvent decide — may or may not be able to start yet
 
     await this.prisma.$transaction(async (tx) => {

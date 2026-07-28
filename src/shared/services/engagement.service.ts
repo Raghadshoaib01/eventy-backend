@@ -6,7 +6,7 @@ export type EngagementTargetType = 'USER' | 'PROVIDER' | 'SERVICE' | 'SUB_SERVIC
 
 /**
  * hasActiveEngagement(entity): true when the target has a Booking with
- * status CONFIRMED|IN_PROGRESS inside an Event with status ACTIVE|IN_PROGRESS.
+ * status CONFIRMED|IN_PROGRESS inside an Event with status DRAFT|IN_PROGRESS.
  * Used to freeze block/unblock and edit actions that would disrupt a live event.
  */
 @Injectable()
@@ -19,7 +19,7 @@ export class EngagementService {
   ): Promise<boolean> {
     const where: Prisma.BookingWhereInput = {
       status: { in: ['CONFIRMED', 'IN_PROGRESS'] },
-      event: { status: { in: ['ACTIVE', 'IN_PROGRESS'] } },
+      event: { status: { in: ['DRAFT', 'IN_PROGRESS'] } },
     };
 
     switch (targetType) {

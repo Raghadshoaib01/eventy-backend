@@ -59,7 +59,7 @@ export class EventController {
   })
   @ApiResponse({ status: 201, description: 'Event and bookings created successfully' })
   @ApiResponse({ status: 400, description: 'Service not available on requested date / capacity exceeded' })
-  @ApiResponse({ status: 404, description: 'Service not found or not active' })
+  @ApiResponse({ status: 404, description: 'Service not found or not draft' })
   @ApiResponse({ status: 409, description: 'Duplicate booking for same service on same date' })
   createEvent(@Request() req, @Body() dto: CreateEventDto) {
     return this.eventService.createEvent(req.user.sub, dto);

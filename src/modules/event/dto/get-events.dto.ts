@@ -7,7 +7,7 @@ import { PaginationDto } from 'src/shared/dto/pagination.dto';
 export class GetEventsDto extends PaginationDto {
   @ApiPropertyOptional({
     enum: EventStatus,
-    example: 'ACTIVE',
+    example: 'DRAFT',
   })
   @IsOptional()
   @IsEnum(EventStatus)
@@ -30,7 +30,6 @@ export class GetEventsDto extends PaginationDto {
   toDate?: string;
 
   @ApiPropertyOptional({
-    example: false,
     description:
       'false/omitted → default list (archived events hidden). true → only archived events.',
   })

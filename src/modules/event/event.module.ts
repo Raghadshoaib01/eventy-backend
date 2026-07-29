@@ -4,9 +4,10 @@ import { EventService } from './event.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { BookingsModule } from '../bookings/bookings.module';
 import { EventCleanupService } from './event-cleanup.service';
+import { DiscountsModule } from '../discounts/discounts.module';
 
 @Module({
-  imports: [BookingsModule],
+  imports: [BookingsModule, DiscountsModule],
   controllers: [EventController],
   providers: [EventService, DomainEventBus,EventCleanupService],
 })

@@ -3,10 +3,22 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
+import { BookingStatus } from '@prisma/client';
 
-const PENDING_TIMEOUT_HOURS = 24;
-const QUOTE_SENT_TIMEOUT_HOURS = 48;
-const CONFIRMED_UNPAID_TIMEOUT_HOURS = 96;
+const REASONS: Record<string, { customer: string; provider: string }> = {
+  PENDING: {
+    customer: 'Provider did not respond to your booking request in time. Please choose another provider.',
+    provider: 'You did not respond to this booking request in time.',
+  },
+  QUOTE_SENT: {
+    customer: 'You did not respond to the price quote in time (accept or reject).',
+    provider: 'The customer did not respond to your quote in time.',
+  },
+  CONFIRMED: {
+    customer: 'You did not complete the cash payment at the provider location in time.',
+    provider: 'The customer did not complete the cash payment in time.',
+  },
+};
 
 @Injectable()
 export class BookingCleanupService {
@@ -17,51 +29,40 @@ export class BookingCleanupService {
     private readonly domainEventBus: DomainEventBus,
   ) {}
 
- @Cron('*/15 * * * *')
-   async handleExpiredBookings() {
-    await this.cancelStale('PENDING', PENDING_TIMEOUT_HOURS,
-      'Provider did not respond to your booking request in time. Please choose another provider.',
-      'You did not respond to this booking request in time.');
-
-    await this.cancelStale('QUOTE_SENT', QUOTE_SENT_TIMEOUT_HOURS,
-      'You did not respond to the price quote in time (accept or reject).',
-      'The customer did not respond to your quote in time.', { requirePayment: false });
-
-    await this.cancelStale('CONFIRMED', CONFIRMED_UNPAID_TIMEOUT_HOURS,
-      'You did not complete the cash payment at the provider location in time.',
-      'The customer did not complete the cash payment in time.', { requirePayment: true });
-  }
-
-  private cutoff(hours: number): Date {
-    return new Date(Date.now() - hours * 60 * 60 * 1000);
-  }
-
-  private async cancelStale(
-    status: 'PENDING' | 'QUOTE_SENT' | 'CONFIRMED',
-    hours: number,
-    customerReason: string,
-    providerReason: string,
-    opts: { requirePayment?: boolean } = {},
-  ) {
-    const where: any = { status, createdAt: { lte: this.cutoff(hours) } };
-    if (opts.requirePayment) where.payment = null; // only unpaid CONFIRMED bookings
-
-    const stale = await this.prisma.booking.findMany({
-      where,
+  /**
+   * Expires bookings whose stored cancellationDeadline has passed. The
+   * deadline is the single source of truth — it is set/refreshed at every
+   * relevant transition (creation, quote sent, cash-confirmed) rather than
+   * recomputed here from createdAt on every run.
+   */
+  @Cron('*/15 * * * *')
+  async handleExpiredBookings() {
+    const expired = await this.prisma.booking.findMany({
+      where: {
+        status: { in: ['PENDING', 'QUOTE_SENT', 'CONFIRMED'] as BookingStatus[] },
+        cancellationDeadline: { lte: new Date() },
+      },
       include: {
         service: { include: { serviceType: { select: { name: true } } } },
         provider: { include: { user: { select: { id: true } } } },
+        payment: { select: { status: true } },
       },
     });
 
-    for (const booking of stale) {
+    for (const booking of expired) {
+      // A CONFIRMED booking whose payment already cleared should have had its
+      // deadline cleared by markPaid — skip defensively in case of a race.
+      if (booking.status === 'CONFIRMED' && booking.payment?.status === 'PAID') continue;
+
+      const reasons = REASONS[booking.status];
+
       await this.prisma.booking.update({
         where: { id: booking.id },
         data: {
           status: 'CANCELLED',
           cancelledAt: new Date(),
           cancelledBy: 'SYSTEM',
-          cancellationReason: providerReason,
+          cancellationReason: reasons.provider,
         },
       });
 
@@ -71,7 +72,7 @@ export class BookingCleanupService {
         entityId: booking.id,
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
-        reason: customerReason,
+        reason: reasons.customer,
       });
       this.domainEventBus.bookingCancelled({
         actorId: booking.customerId,
@@ -79,12 +80,12 @@ export class BookingCleanupService {
         entityId: booking.id,
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
-        reason: providerReason,
+        reason: reasons.provider,
       });
     }
 
-    if (stale.length) {
-      this.logger.log(`Auto-cancelled ${stale.length} stale ${status} booking(s)`);
+    if (expired.length) {
+      this.logger.log(`Auto-cancelled ${expired.length} expired booking(s)`);
     }
   }
 }

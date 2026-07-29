@@ -8,7 +8,10 @@ import { ServiceDetailsService } from './service details.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 
+import { DiscountsModule } from '../discounts/discounts.module';
+
 @Module({
+  imports: [DiscountsModule],
   controllers: [
     ServicesController,
     SubServiceController,

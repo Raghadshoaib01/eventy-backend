@@ -9,12 +9,14 @@ import {
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { CreateEventDto, ServiceSelectionDto } from './dto/create-event.dto';
-import { BookingStatus, Prisma, UserRole } from '@prisma/client';
+import { BookingStatus, Discount, Prisma, UserRole } from '@prisma/client';
 import { JwtPayload } from 'src/common/helpers/token.helper';
 import { GetEventsDto } from './dto/get-events.dto';
 import { isRangeWithinWindow, rangesOverlap } from 'src/common/helpers/time.helper';
 import { formatBookingsList } from 'src/common/helpers/booking-response.helper';
 import { CancelEventDto } from './dto/cancel-event.dto';
+import { DiscountsService } from '../discounts/discounts.service';
+import { PENDING_TIMEOUT_HOURS } from 'src/common/constants/booking.constants';
 
 
 const ACTIVE_BOOKING_STATUSES: BookingStatus[] = [
@@ -29,6 +31,8 @@ export class EventService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventBus: DomainEventBus,
+    private readonly discountsService: DiscountsService,
+
   ) {}
 
   // ─────────────────────────────────────────────────────────────
@@ -92,7 +96,7 @@ export class EventService {
     // 4. Per-service structural validations (day / working-hours / slot bounds).
     //    Safe to run before the transaction — they depend only on the
     //    service's static definition, not on concurrently-changing bookings.
-    const matchedByService = new Map<string, { availability: any; slot?: any }>();
+    const matchedByService = new Map<string, { availability: any; slot?: any; discount: Discount | null  }>();
 
     for (const svcInput of dto.services) {
       const svc = services.find((s) => s.id === svcInput.serviceId)!;
@@ -159,11 +163,11 @@ export class EventService {
         }
       }
 
-      matchedByService.set(svcInput.serviceId, {
+       const discount = await this.discountsService.resolveActiveDiscountForService(svc.id);
+        matchedByService.set(svcInput.serviceId, {
         availability: matched,
         slot: matchedSlot,
-      });
-
+        discount,  });
       // 4c. Guest capacity check
       if (
         dto.numberOfGuests &&
@@ -232,7 +236,7 @@ export class EventService {
 
         for (const svcInput of dto.services) {
           const svc = services.find((s) => s.id === svcInput.serviceId)!;
-          const { availability: matchedAvailability, slot: matchedSlot } =
+          const { availability: matchedAvailability, slot: matchedSlot , discount} =
             matchedByService.get(svcInput.serviceId)!;
 
           // 5a. Idempotency — no active booking for same service on same date
@@ -351,7 +355,10 @@ export class EventService {
           if (itemsData.length === 0 && svc.price) {
             totalAmount = svc.price;
           }
-
+          const pricing = this.discountsService.computePriceWithDiscount(
+  totalAmount,
+  discount,
+);
           const bookingData: Prisma.BookingUncheckedCreateInput = {
             eventId: event.id,
             customerId,
@@ -359,6 +366,10 @@ export class EventService {
             serviceId: svcInput.serviceId,
             timeSlotId: svcInput.timeSlotId ?? null,
             totalAmount,
+            discountId: discount?.id,
+            discountAmount: discount ? pricing.discountAmount : undefined,
+            cancellationDeadline: new Date(Date.now() + PENDING_TIMEOUT_HOURS * 60 * 60 * 1000),
+
             status: 'PENDING',
             items: { create: itemsData },
           };
@@ -424,6 +435,7 @@ export class EventService {
               },
             },
             payment: true,
+            discount: { select: { code: true, percentOff: true } },
             items: {
               include: {
                 subService: {
@@ -673,7 +685,7 @@ export class EventService {
         throw new BadRequestException(`SubService "${item.subServiceId}" not found or not available in service "${svc.serviceType.name}"`);
       }
     }
-
+    const discount = await this.discountsService.resolveActiveDiscountForService(svc.id);
     const booking = await this.prisma.$transaction(async (tx) => {
       const duplicate = await tx.booking.findFirst({
         where: {
@@ -745,11 +757,15 @@ export class EventService {
       }
 
       if (itemsData.length === 0 && svc.price) totalAmount = svc.price;
+      const pricing = this.discountsService.computePriceWithDiscount(totalAmount, discount);
 
       return tx.booking.create({
         data: {
           eventId, customerId, providerId: svc.providerId, serviceId: dto.serviceId,
           timeSlotId: dto.timeSlotId ?? null, totalAmount, status: 'PENDING',
+          discountId: discount?.id,
+          discountAmount: discount ? pricing.discountAmount : undefined,
+          cancellationDeadline: new Date(Date.now() + PENDING_TIMEOUT_HOURS * 60 * 60 * 1000),
           items: { create: itemsData },
         },
         include: { items: true },

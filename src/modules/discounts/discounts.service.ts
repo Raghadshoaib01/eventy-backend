@@ -255,4 +255,114 @@ export class DiscountsService {
       data: { needsReconfirmation: true },
     });
   }
+  
+//من هون بداية تنفيذ antygravity للخطة بال docs 
+// وبعدها يلي رح اخده من كلاود واعتمد عليه
+  /**
+   * Used by listing/details endpoints to display the discount to the user,
+   * regardless of whether a code is required to redeem it.
+   
+  async getActiveDiscountForPackage(packageId: string): Promise<Discount | null> {
+    const discount = await this.prisma.discount.findFirst({
+      where: { scope: DiscountScope.PACKAGE, packageId, status: DiscountStatus.ACTIVE },
+    });
+    if (!discount || !this.isCurrentlyValid(discount)) return null;
+    return discount;
+  }
+
+  async getActiveDiscountForService(serviceId: string): Promise<Discount | null> {
+    const discount = await this.prisma.discount.findFirst({
+      where: { scope: DiscountScope.SERVICE, serviceId, status: DiscountStatus.ACTIVE },
+    });
+    if (!discount || !this.isCurrentlyValid(discount)) return null;
+    return discount;
+  }
+
+  /**
+   * Applies the discount logic to compute the final price.
+   */
+  /*
+  calculateDiscountedPrice(originalPrice: number, discount: Discount | null): { discountAmount: number, finalPrice: number } {
+    if (!discount || !this.isCurrentlyValid(discount)) {
+      return { discountAmount: 0, finalPrice: originalPrice };
+    }
+    const discountAmount = originalPrice * (discount.percentOff / 100);
+    return {
+      discountAmount,
+      finalPrice: originalPrice - discountAmount,
+    };
+  }
+*/
+//من هون نهاية تنفيذ antygravity للخطة بال docs 
+
+  // ── shared pricing/decoration (reused by services, packages, bookings, payments) ──
+
+  toSummary(discount: Discount) {
+    return {
+      id: discount.id,
+      code: discount.code,
+      percentOff: discount.percentOff,
+      origin: discount.origin,
+    };
+  }
+
+  /**
+   * Single source of truth for turning a price + an (already resolved,
+   * already-validated) discount into the original/final price pair shown
+   * across services, packages, bookings, and payments — nothing else in the
+   * codebase should compute `price * percentOff / 100` directly.
+   */
+  computePriceWithDiscount(originalPrice: number, discount: Discount | null) {
+    const discountAmount = discount
+      ? Math.round(originalPrice * (discount.percentOff / 100) * 100) / 100
+      : 0;
+    const finalPrice = Math.round((originalPrice - discountAmount) * 100) / 100;
+
+    return {
+      originalPrice,
+      discountAmount,
+      finalPrice,
+      discount: discount ? this.toSummary(discount) : null,
+    };
+  }
+
+  /** Batch version of resolveActiveDiscountForService for list endpoints (avoids N+1). Only auto-applied (code=null) discounts are shown as "applied" without a supplied code. */
+  async getActiveAutoDiscountsForServices(serviceIds: string[]): Promise<Map<string, Discount>> {
+    if (serviceIds.length === 0) return new Map();
+
+    const rows = await this.prisma.discount.findMany({
+      where: {
+        scope: DiscountScope.SERVICE,
+        serviceId: { in: serviceIds },
+        status: DiscountStatus.ACTIVE,
+        code: null,
+      },
+    });
+
+    const map = new Map<string, Discount>();
+    for (const d of rows) {
+      if (d.serviceId && this.isCurrentlyValid(d)) map.set(d.serviceId, d);
+    }
+    return map;
+  }
+
+  /** Batch version of resolveActiveDiscountForPackage for list endpoints. */
+  async getActiveAutoDiscountsForPackages(packageIds: string[]): Promise<Map<string, Discount>> {
+    if (packageIds.length === 0) return new Map();
+
+    const rows = await this.prisma.discount.findMany({
+      where: {
+        scope: DiscountScope.PACKAGE,
+        packageId: { in: packageIds },
+        status: DiscountStatus.ACTIVE,
+        code: null,
+      },
+    });
+
+    const map = new Map<string, Discount>();
+    for (const d of rows) {
+      if (d.packageId && this.isCurrentlyValid(d)) map.set(d.packageId, d);
+    }
+    return map;
+  }
 }

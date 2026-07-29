@@ -82,7 +82,14 @@ export class PackagesService {
       })),
     ];
 
-    return { ...rest, services };
+     const indicativePrice = this.computeIndicativePrice(pkg, services);
+    const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId);
+    const pricing =
+      indicativePrice != null
+        ? this.discountsService.computePriceWithDiscount(indicativePrice, discount)
+        : { originalPrice: null, finalPrice: null, discountAmount: 0, discount: discount ? this.discountsService.toSummary(discount) : null };
+
+    return { ...rest, services, ...pricing };
   }
 
   /** True if `serviceId` is this package's Hall (docs §7, §8.1). */
@@ -401,6 +408,15 @@ export class PackagesService {
     return hall.price ?? 0;
   }
 
+   /** Shared indicative price used by both listPublicPackages and composeDetail. */
+  private computeIndicativePrice(pkg: { pricingStrategy: PackagePricingStrategy }, services: any[]): number | null {
+    if (pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
+      const hall = this.findHall(services);
+      return hall ? this.hallPriceFor(hall, hall.minCapacity ?? 1) : null;
+    }
+    return services.reduce((sum, s: any) => sum + (s.price ?? 0), 0);
+  }
+
   async listPublicPackages(query: PaginationDto) {
     const { page = 1, limit = 10 } = query;
     const skip = (page - 1) * limit;
@@ -420,7 +436,7 @@ export class PackagesService {
       }),
       this.prisma.package.count({ where }),
     ]);
-
+    const discountMap = await this.discountsService.getActiveAutoDiscountsForPackages(packages.map((p) => p.id));
     const items = packages.map((pkg) => {
       const { exclusiveServices, attachedItems, ...rest } = pkg;
       const services = [
@@ -428,19 +444,15 @@ export class PackagesService {
         ...attachedItems.map((i) => i.service),
       ];
 
-      // Indicative "starting from" price — live estimate, never cached/stored
-      // (docs §11.3): Hall at its own minimum guest count, no optional add-ons.
-      let startingPrice: number | null = null;
-      if (pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
-        const hall = this.findHall(services);
-        if (hall) {
-          startingPrice = this.hallPriceFor(hall, hall.minCapacity ?? 1);
-        }
-      } else {
-        startingPrice = services.reduce((sum, s: any) => sum + (s.price ?? 0), 0);
-      }
+      const startingPrice = this.computeIndicativePrice(pkg, services);
+      const discount = discountMap.get(pkg.id) ?? null;
+      const pricing =
+        startingPrice != null
+          ? this.discountsService.computePriceWithDiscount(startingPrice, discount)
+          : { originalPrice: null, finalPrice: null, discountAmount: 0, discount: discount ? this.discountsService.toSummary(discount) : null };
 
-      return { ...rest, startingPrice, serviceCount: services.length };
+
+      return { ...rest, startingPrice, serviceCount: services.length,...pricing };
     });
 
     return {
@@ -536,8 +548,8 @@ export class PackagesService {
 
     // Discount applied AFTER subtotal, the package's own discount only —
     // never combined with a component service's own discount (docs §4, §11.1 step 4).
-    const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId, query.discountCode);
-    const discountAmount = discount ? subtotal * (discount.percentOff / 100) : 0;
+ const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId, query.discountCode);
+    const pricing = this.discountsService.computePriceWithDiscount(subtotal, discount);
 
     return {
       message: 'Price quote calculated successfully',
@@ -547,8 +559,9 @@ export class PackagesService {
         optionalServicesTotal,
         selectedOptionalServiceIds: selectedOptional.map((s) => s.id),
         subtotal,
-        discountAmount,
-        totalAmount: subtotal - discountAmount,
+        discountAmount: pricing.discountAmount,
+        totalAmount: pricing.finalPrice,
+        discount: pricing.discount,
       },
     };
   }
@@ -601,8 +614,9 @@ export class PackagesService {
     // Discount resolved and frozen here, before payment — the package's own
     // discount only, applied after subtotal (docs §4, §11.1, §12.3 step 4).
     const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId, dto.discountCode);
-    const discountAmount = discount ? subtotal * (discount.percentOff / 100) : 0;
-    const totalAmount = subtotal - discountAmount;
+    const pricing = this.discountsService.computePriceWithDiscount(subtotal, discount);
+    const discountAmount = pricing.discountAmount;
+    const totalAmount = pricing.finalPrice;
 
     const lineAmount = (service: any) =>
       service.isRequired && service.serviceType?.isVenue ? hallPrice : (service.price ?? 0);

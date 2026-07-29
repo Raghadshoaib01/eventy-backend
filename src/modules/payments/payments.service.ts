@@ -72,10 +72,11 @@ export class PaymentsService {
 
     if (!booking.packageBookingId) {
       const discount = await this.discountsService.resolveActiveDiscountForService(booking.serviceId, discountCode);
+      const pricing = this.discountsService.computePriceWithDiscount(subtotalAmount, discount);
       if (discount) {
         discountId = discount.id;
-        discountAmount = subtotalAmount * (discount.percentOff / 100);
-        amount = subtotalAmount - discountAmount;
+        discountAmount = pricing.discountAmount;
+        amount = pricing.finalPrice;
       }
     }
 
@@ -206,6 +207,10 @@ export class PaymentsService {
       where: { id: paymentId },
       data: { status: PaymentStatus.PAID, paidAt: new Date(), providerReference },
     });
+    await this.prisma.booking.update({
+      where: { id: paid.bookingId },
+      data: { cancellationDeadline: null },
+    }).catch(() => {});
 
     const booking = await this.prisma.booking.findUnique({
       where: { id: paid.bookingId },

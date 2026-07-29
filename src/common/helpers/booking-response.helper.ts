@@ -3,7 +3,7 @@ import { BookingStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 export function formatBookingResponse(booking: any) {
   if (!booking) return booking;
 
-  const { payment, ...rest } = booking;
+  const { payment, discount, ...rest } = booking;
   const isConfirmed = booking.status === 'CONFIRMED';
 
   let paymentInfo = undefined;
@@ -23,9 +23,19 @@ export function formatBookingResponse(booking: any) {
       };
     }
   }
+  let discountInfo = undefined;
+if (booking.discountId) {
+    discountInfo = {
+      id: booking.discountId,
+      code: discount?.code ?? null,
+      percentOff: discount?.percentOff,
+      amount: booking.discountAmount,
+    };
+  }
 
   return {
     ...rest,
+    ...(discountInfo ? { discount: discountInfo } : {}),
     ...(paymentInfo ? { payment: paymentInfo } : {}),
   };
 }

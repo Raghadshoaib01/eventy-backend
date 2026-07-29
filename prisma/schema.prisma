@@ -564,6 +564,10 @@ model Booking {
   totalAmount Float  @default(0)
   finalAmount Float?
 
+  discountId     String?
+  discount       Discount? @relation(fields: [discountId], references: [id])
+  discountAmount Float?
+
   status BookingStatus @default(PENDING)
 
   acceptedAt  DateTime?
@@ -859,6 +863,7 @@ model Discount {
   updatedAt           DateTime       @updatedAt
 
   payments Payment[]
+  bookings Booking[]
 
   @@index([scope])
   @@index([status])

@@ -5,6 +5,7 @@ import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DeliveryService } from '../delivery/delivery.service';
 import { BulkQuoteDecisionDto, BulkQuotePaymentMethod } from './dto/bulk-quote-decision.dto';
+import { CONFIRMED_UNPAID_TIMEOUT_HOURS } from 'src/common/constants/booking.constants';
 
 const TERMINAL_STATUSES = ['COMPLETED', 'CANCELLED', 'REJECTED'];
 const PENDING_STATUSES = ['PENDING', 'QUOTE_SENT'];
@@ -95,7 +96,9 @@ export class BookingsService {
     // Booking.status → CONFIRMED, i.e. after this call, not before).
     await this.prisma.booking.update({
       where: { id: bookingId },
-      data: { status: 'CONFIRMED' },
+      data: { status: 'CONFIRMED',
+      cancellationDeadline: new Date(Date.now() + CONFIRMED_UNPAID_TIMEOUT_HOURS * 60 * 60 * 1000),
+       },
     });
 
     // Mirrors when Payment is created for the same booking
@@ -308,13 +311,18 @@ export class BookingsService {
 
     await this.prisma.$transaction(async (tx) => {
       for (const booking of acceptedBookings) {
+        const isBankTransfer = method === 'BANK_TRANSFER';
         await tx.booking.update({
           where: { id: booking.id },
-          data: { status: 'CONFIRMED' },
+          data: {
+            status: 'CONFIRMED',
+            cancellationDeadline: isBankTransfer
+              ? null
+              : new Date(Date.now() + CONFIRMED_UNPAID_TIMEOUT_HOURS * 60 * 60 * 1000),
+          },
         });
 
         const subtotalAmount = booking.finalAmount ?? booking.totalAmount;
-        const isBankTransfer = method === 'BANK_TRANSFER';
 
         await tx.payment.create({
           data: {

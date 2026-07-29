@@ -10,6 +10,7 @@ import { SendQuoteDto } from './dto/send-quote.dto';
 import { PaginationDto } from 'src/shared/dto/pagination.dto';
 import { RejectBookingDto } from './dto/reject-booking.dto';
 import { formatBookingResponse, formatBookingsList } from 'src/common/helpers/booking-response.helper';
+import { QUOTE_SENT_TIMEOUT_HOURS } from 'src/common/constants/booking.constants';
 
 @Injectable()
 export class ProviderBookingsService {
@@ -46,6 +47,7 @@ export class ProviderBookingsService {
           customer: {
             select: { fullName: true, phoneNumber: true, profileImage: true },
           },
+          discount: { select: { code: true, percentOff: true } },
           payment: true,
         },
       }),
@@ -97,6 +99,7 @@ export class ProviderBookingsService {
             },
           },
         },
+        discount: { select: { code: true, percentOff: true } },
         payment: true,
       },
     });
@@ -199,6 +202,7 @@ export class ProviderBookingsService {
           finalAmount,
           providerNotes: dto.providerNotes,
           status: 'QUOTE_SENT',
+          cancellationDeadline: new Date(Date.now() + QUOTE_SENT_TIMEOUT_HOURS * 60 * 60 * 1000),
         },
       });
     });

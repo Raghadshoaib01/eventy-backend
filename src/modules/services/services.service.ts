@@ -13,8 +13,10 @@ import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { EngagementService } from 'src/shared/services/engagement.service';
-import { FileType, PackageStatus, PackagePricingStrategy, DayOfWeek } from '@prisma/client';
+import { FileType, PackageStatus, PackagePricingStrategy, DayOfWeek, Discount } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
+
+import { DiscountsService } from '../discounts/discounts.service';
 
 @Injectable()
 export class ServicesService {
@@ -22,7 +24,7 @@ export class ServicesService {
         private readonly cloudinaryService: CloudinaryService,
         private readonly engagementService: EngagementService,
         private readonly domainEventBus: DomainEventBus,
-
+        private readonly discountsService: DiscountsService,
   ) {}
 
 // ========================
@@ -317,7 +319,8 @@ async getServiceById(
     this.prisma.subService.count({ where: { serviceId, isAvailable: true, approvalStatus: 'ACTIVE' } }),
   ]);
 
-  const { eventTypes: _et, ...rest } = service;
+  const discount = await this.discountsService.resolveActiveDiscountForService(serviceId);
+  const { eventTypes: _et, ...rest } = this.decorateServiceWithDiscount(service, discount);
 
   return {
     message: 'Service retrieved successfully',
@@ -673,13 +676,16 @@ async getServiceById(
       this.prisma.service.count({ where }),
     ]);
 
+    const discountMap = await this.discountsService.getActiveAutoDiscountsForServices(services.map((s) => s.id));
+    const items = services.map((s) => this.decorateServiceWithDiscount(s, discountMap.get(s.id) ?? null));
+
     return {
-  message:
-    total > 0
-      ? 'Available services retrieved successfully'
-      : 'No available services found matching the given criteria',
+      message:
+        total > 0
+          ? 'Available services retrieved successfully'
+          : 'No available services found matching the given criteria',
       data: {
-        items: services,
+        items,
         meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
       },
     };
@@ -774,4 +780,22 @@ async deleteServiceType(typeId: string) {
   };
 }
 
+/** Shared service + sub-service price decoration reused by list and detail. */
+  private decorateServiceWithDiscount(service: any, discount: Discount | null) {
+    const pricing =
+      service.price != null
+        ? this.discountsService.computePriceWithDiscount(service.price, discount)
+        : {
+            originalPrice: null,
+            finalPrice: null,
+            discountAmount: 0,
+            discount: discount ? this.discountsService.toSummary(discount) : null,
+          };
+
+    const subServices = service.subServices?.map((sub: any) => ({
+      ...sub,
+      ...this.discountsService.computePriceWithDiscount(sub.pricePerUnit, discount),
+    }));
+     return { ...service, ...pricing, ...(subServices ? { subServices } : {}) };
+  }
 }

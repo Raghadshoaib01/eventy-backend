@@ -4,6 +4,8 @@ import { PrismaService } from 'src/database/prisma.service';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { UpdateProviderProfileDto, UpdateBankAccountDto } from '../providers/dto/Update provider profile.dto';
 import { fileURLToPath } from 'url';
+import { DiscountsService } from '../discounts/discounts.service';
+import { ServicesService } from '../services/services.service';
 
 
 @Injectable()
@@ -11,8 +13,18 @@ export class ProviderProfileService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly discountsService: DiscountsService,
+    private readonly servicesService: ServicesService,
   ) {}
 
+  private async decorateServicesWithDiscounts<T extends { id: string }>(services: T[]): Promise<T[]> {
+    const discountMap = await this.discountsService.getAllActiveDiscountsForServices(
+      services.map((s) => s.id),
+    );
+    return services.map((s) =>
+      this.servicesService.decorateServiceWithDiscount(s, discountMap.get(s.id) ?? null),
+    ) as T[];
+  }
   /**
    * الحصول على Profile كامل للـ Provider
    */
@@ -50,10 +62,19 @@ export class ProviderProfileService {
     // إزالة الحقول الحساسة
     const { passwordHash, ...userWithoutPassword } = user;
 
+    const decoratedServices = await this.decorateServicesWithDiscounts(
+      userWithoutPassword.provider.services,
+    );
     return {
       message: 'Provider profile retrieved successfully',
-      data: userWithoutPassword,
-    };
+      data: {
+              ...userWithoutPassword,
+              provider: {
+                ...userWithoutPassword.provider,
+                services: decoratedServices,
+              },
+            },
+          };
   }
 
   // /**
@@ -251,56 +272,13 @@ async updateBankAccount(
       },
       orderBy: { createdAt: 'desc' },
     });
+    const decorated = await this.decorateServicesWithDiscounts(services);
 
     return {
       message: 'Services retrieved successfully',
-      data: services,
+      data: decorated,
     };
   }
-
-  /**
-   * الحصول على خدمة واحدة بالتفاصيل
-   */
-  async getServiceById(userId: string, serviceId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: { provider: true },
-    });
-
-    if (!user || !user.provider) {
-      throw new NotFoundException('Provider not found');
-    }
-
-    const service = await this.prisma.service.findFirst({
-      where: {
-        id: serviceId,
-        providerId: user.provider.id,
-      },
-      include: {
-        files: true,
-        availability: {
-          include: {
-            timeSlots: true,
-          },
-        },
-        subServices: {
-          include: {
-            media: true,
-          },
-        },
-      },
-    });
-
-    if (!service) {
-      throw new NotFoundException('Service not found or you do not own this service');
-    }
-
-    return {
-      message: 'Service retrieved successfully',
-      data: service,
-    };
-  }
-
   /**
    * حذف خدمة (فقط إذا كانت PENDING أو REJECTED)
    */

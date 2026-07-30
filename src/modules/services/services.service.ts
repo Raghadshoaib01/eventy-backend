@@ -319,7 +319,14 @@ async getServiceById(
     this.prisma.subService.count({ where: { serviceId, isAvailable: true, approvalStatus: 'ACTIVE' } }),
   ]);
 
-  const discount = await this.discountsService.resolveActiveDiscountForService(serviceId);
+// Owner/admin see every active discount, including code-gated ones — they
+  // need visibility into all their own promotions. Everyone else (public
+  // customer view) only sees discounts that apply automatically, mirroring
+  // getAvailableServicesByType's browse behaviour.
+  const discount =
+    isAdmin || isOwner
+      ? (await this.discountsService.getAllActiveDiscountsForServices([serviceId])).get(serviceId) ?? null
+      : await this.discountsService.resolveActiveDiscountForService(serviceId);
   const { eventTypes: _et, ...rest } = this.decorateServiceWithDiscount(service, discount);
 
   return {
@@ -781,7 +788,7 @@ async deleteServiceType(typeId: string) {
 }
 
 /** Shared service + sub-service price decoration reused by list and detail. */
-  private decorateServiceWithDiscount(service: any, discount: Discount | null) {
+   decorateServiceWithDiscount(service: any, discount: Discount | null) {
     const pricing =
       service.price != null
         ? this.discountsService.computePriceWithDiscount(service.price, discount)

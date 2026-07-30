@@ -45,13 +45,54 @@ export class DiscountsService {
     return user.provider;
   }
 
-  private async assertNoActiveDiscount(serviceId?: string, packageId?: string) {
-    // One active discount per target at a time (docs §4/§8) — stacking is future work.
-    const existing = await this.prisma.discount.findFirst({
-      where: { serviceId, packageId, status: DiscountStatus.ACTIVE },
+  /**
+   * Two auto-applied (code=null) discounts on the same target can never
+   * overlap in time — that would be an ambiguous "which one applies?" case
+   * at checkout. A coded discount never conflicts with anything (the
+   * customer chooses to apply it), and two coded discounts never conflict
+   * with each other either.
+   */
+  private rangesOverlap(
+    aStart: Date | null,
+    aEnd: Date | null,
+    bStart: Date | null,
+    bEnd: Date | null,
+  ): boolean {
+    const aStartsBeforeBEnds = !bEnd || !aStart || aStart <= bEnd;
+    const bStartsBeforeAEnds = !aEnd || !bStart || bStart <= aEnd;
+    return aStartsBeforeBEnds && bStartsBeforeAEnds;
+  }
+
+  private async assertNoOverlappingAutoDiscount(
+    target: { serviceId?: string; packageId?: string },
+    incoming: { code?: string; startsAt?: Date | null; endsAt?: Date | null },
+  ) {
+    // Coded discounts never conflict with anything (docs: code+code,
+    // code+no-code are both allowed unconditionally).
+    if (incoming.code) return;
+
+    const existingAutoDiscounts = await this.prisma.discount.findMany({
+      where: {
+        serviceId: target.serviceId,
+        packageId: target.packageId,
+        status: DiscountStatus.ACTIVE,
+        code: null,
+      },
     });
-    if (existing) {
-      throw new BadRequestException('This service/package already has an active discount');
+
+    const overlapping = existingAutoDiscounts.find((d) =>
+      this.rangesOverlap(
+        incoming.startsAt ?? null,
+        incoming.endsAt ?? null,
+        d.startsAt,
+        d.endsAt,
+      ),
+    );
+
+    if (overlapping) {
+      throw new BadRequestException(
+        'An active discount without a code already covers an overlapping date range for this target',
+      );
     }
   }
 
@@ -59,7 +100,13 @@ export class DiscountsService {
 
   async createProviderDiscount(userId: string, dto: CreateDiscountDto) {
     await this.resolveOwnedTarget(userId, dto);
-    await this.assertNoActiveDiscount(dto.serviceId, dto.packageId);
+    const startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
+    const endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
+
+    await this.assertNoOverlappingAutoDiscount(
+      { serviceId: dto.serviceId, packageId: dto.packageId },
+      { code: dto.code, startsAt, endsAt },
+    );
 
     if (dto.code) {
       const codeTaken = await this.prisma.discount.findUnique({ where: { code: dto.code } });
@@ -151,7 +198,13 @@ export class DiscountsService {
     if (dto.scope === DiscountScope.PACKAGE && (!dto.packageId || dto.serviceId)) {
       throw new BadRequestException('scope=PACKAGE requires packageId only (docs §2)');
     }
-    await this.assertNoActiveDiscount(dto.serviceId, dto.packageId);
+    const startsAt = dto.startsAt ? new Date(dto.startsAt) : null;
+    const endsAt = dto.endsAt ? new Date(dto.endsAt) : null;
+
+    await this.assertNoOverlappingAutoDiscount(
+      { serviceId: dto.serviceId, packageId: dto.packageId },
+      { code: dto.code, startsAt, endsAt },
+    );
 
     // Company absorbs the cost — no provider payout is reduced, so no
     // approval is needed regardless of who owns the target (docs §1).
@@ -184,7 +237,9 @@ export class DiscountsService {
       where: { id: discountId },
       data: { status: DiscountStatus.CANCELLED },
     });
-
+    if (discount.status !== DiscountStatus.ACTIVE) {
+  throw new BadRequestException('Only active discounts can be cancelled');
+}
     // Only notify if someone other than the creator did the cancelling —
     // a provider cancelling their own discount doesn't need to be told
     // about their own action (docs §7).
@@ -255,46 +310,6 @@ export class DiscountsService {
       data: { needsReconfirmation: true },
     });
   }
-  
-//من هون بداية تنفيذ antygravity للخطة بال docs 
-// وبعدها يلي رح اخده من كلاود واعتمد عليه
-  /**
-   * Used by listing/details endpoints to display the discount to the user,
-   * regardless of whether a code is required to redeem it.
-   
-  async getActiveDiscountForPackage(packageId: string): Promise<Discount | null> {
-    const discount = await this.prisma.discount.findFirst({
-      where: { scope: DiscountScope.PACKAGE, packageId, status: DiscountStatus.ACTIVE },
-    });
-    if (!discount || !this.isCurrentlyValid(discount)) return null;
-    return discount;
-  }
-
-  async getActiveDiscountForService(serviceId: string): Promise<Discount | null> {
-    const discount = await this.prisma.discount.findFirst({
-      where: { scope: DiscountScope.SERVICE, serviceId, status: DiscountStatus.ACTIVE },
-    });
-    if (!discount || !this.isCurrentlyValid(discount)) return null;
-    return discount;
-  }
-
-  /**
-   * Applies the discount logic to compute the final price.
-   */
-  /*
-  calculateDiscountedPrice(originalPrice: number, discount: Discount | null): { discountAmount: number, finalPrice: number } {
-    if (!discount || !this.isCurrentlyValid(discount)) {
-      return { discountAmount: 0, finalPrice: originalPrice };
-    }
-    const discountAmount = originalPrice * (discount.percentOff / 100);
-    return {
-      discountAmount,
-      finalPrice: originalPrice - discountAmount,
-    };
-  }
-*/
-//من هون نهاية تنفيذ antygravity للخطة بال docs 
-
   // ── shared pricing/decoration (reused by services, packages, bookings, payments) ──
 
   toSummary(discount: Discount) {
@@ -345,7 +360,30 @@ export class DiscountsService {
     }
     return map;
   }
+  /**
+   * Unlike getActiveAutoDiscountsForServices (customer browse — auto-applied
+   * only), this returns EVERY active discount per service including
+   * code-gated ones — used on the provider's own dashboard where they need
+   * to see all of their active discounts, not just the ones a customer
+   * would see applied automatically.
+   */
+  async getAllActiveDiscountsForServices(serviceIds: string[]): Promise<Map<string, Discount>> {
+    if (serviceIds.length === 0) return new Map();
 
+    const rows = await this.prisma.discount.findMany({
+      where: {
+        scope: DiscountScope.SERVICE,
+        serviceId: { in: serviceIds },
+        status: DiscountStatus.ACTIVE,
+      },
+    });
+
+    const map = new Map<string, Discount>();
+    for (const d of rows) {
+      if (d.serviceId && this.isCurrentlyValid(d)) map.set(d.serviceId, d);
+    }
+    return map;
+  }
   /** Batch version of resolveActiveDiscountForPackage for list endpoints. */
   async getActiveAutoDiscountsForPackages(packageIds: string[]): Promise<Map<string, Discount>> {
     if (packageIds.length === 0) return new Map();

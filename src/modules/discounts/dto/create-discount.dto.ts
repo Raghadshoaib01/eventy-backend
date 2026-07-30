@@ -1,6 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { DiscountScope } from '@prisma/client';
+import { IsTodayOrFuture } from 'src/common/validators/future-date.validator';
 
 export class CreateDiscountDto {
   @ApiProperty({ enum: DiscountScope, example: DiscountScope.SERVICE })
@@ -34,10 +35,12 @@ export class CreateDiscountDto {
   @ApiPropertyOptional({ example: '2026-08-01T00:00:00.000Z' })
   @IsOptional()
   @IsDateString()
+  @IsTodayOrFuture()
   startsAt?: string;
 
   @ApiPropertyOptional({ example: '2026-09-01T00:00:00.000Z' })
   @IsOptional()
   @IsDateString()
+  @IsTodayOrFuture()
   endsAt?: string;
 }

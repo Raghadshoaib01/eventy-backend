@@ -6,8 +6,11 @@ import { ProviderAuthController } from './provider-auth.controller';
 import { OtpService } from '../auth/otp.service';
 import { ProviderProfileController } from './provider profail.controller';
 import { ProviderProfileService } from './provider profail services.service';
+import { ServicesModule } from '../services/services.module';
+import { DiscountsModule } from '../discounts/discounts.module';
 
 @Module({
+  imports: [ServicesModule, DiscountsModule],
   controllers: [
     ProvidersController,
     ProviderAuthController,

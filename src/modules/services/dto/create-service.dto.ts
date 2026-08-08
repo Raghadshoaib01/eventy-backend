@@ -23,6 +23,12 @@ export class CreateServiceDto {
   @IsUUID()
   serviceTypeId: string;
 
+  @ApiPropertyOptional({ example: false })
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  isPackaged?: boolean;
+
   // 
   @ApiProperty({
     enum: EventType,

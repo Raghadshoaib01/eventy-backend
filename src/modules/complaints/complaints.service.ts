@@ -39,7 +39,7 @@ export class ComplaintsService {
         targetType: dto.targetType,
         targetId: dto.targetId,
         bookingId: dto.bookingId,
-        packageBookingId: dto.packageBookingId,
+        packageEventBookingId: dto.packageEventBookingId,
         subject: dto.subject,
         description: dto.description,
         status: ComplaintStatus.PENDING,

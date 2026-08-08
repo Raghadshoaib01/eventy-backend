@@ -38,11 +38,18 @@ export const DomainEvents = {
   PAYMENT_CONFIRMED: 'payment.confirmed',
   PAYMENT_FAILED: 'payment.failed',
 
-  // Package
-  PACKAGE_APPROVED: 'package.approved',
-  PACKAGE_REJECTED: 'package.rejected',
-  PACKAGE_SERVICE_REMOVED: 'package.service.removed',
-  PACKAGE_CHANGE_APPLIED: 'package.change.applied',
+  // Package (docs/implementation_plan.md §4)
+  PACKAGE_JOIN_REQUESTED: 'package.join.requested',
+  PACKAGE_ACTIVATED: 'package.activated',
+  PACKAGE_JOIN_ACCEPTED: 'package.join.accepted',
+  PACKAGE_JOIN_REJECTED: 'package.join.rejected',
+  PACKAGE_PARTNER_LEFT: 'package.partner.left',
+  PACKAGE_BOOKING_REQUESTED: 'package.booking.requested',
+  PACKAGE_BOOKING_ACCEPTED: 'package.booking.accepted',
+  PACKAGE_BOOKING_REJECTED: 'package.booking.rejected',
+  PACKAGE_PAYMENT_CASH_CHOSEN: 'package.payment.cash.chosen',
+  PACKAGE_PAYMENT_CONFIRMED: 'package.payment.confirmed',
+  PACKAGE_BOOKING_PAYMENT_EXPIRED: 'package.booking.payment.expired',
 
   // Discount
   DISCOUNT_CANCELLED: 'discount.cancelled',
@@ -175,28 +182,78 @@ export interface EventCancelledPayload extends BaseDomainEventPayload {
   reason: string;
 }
 
-export interface PackageApprovedPayload extends BaseDomainEventPayload {
+export interface PackageJoinRequestedPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
-  adminMessage?: string;
+  ownerProviderName: string;
+  serviceName?: string;
 }
 
-export interface PackageRejectedPayload extends BaseDomainEventPayload {
+export interface PackageActivatedPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
-  adminMessage?: string;
+  ownerProviderName: string;
 }
 
-export interface PackageServiceRemovedPayload extends BaseDomainEventPayload {
+export interface PackageJoinAcceptedPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
-  serviceName: string;
-  packageDeactivated: boolean;
+  partnerProviderName: string;
+  serviceName?: string;
 }
 
-export interface PackageChangeAppliedPayload extends BaseDomainEventPayload {
+export interface PackageJoinRejectedPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
+  partnerProviderName: string;
+  rejectionReason?: string;
+}
+
+export interface PackagePartnerLeftPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  partnerProviderName: string;
+}
+
+export interface PackageBookingRequestedPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+  customerName?: string;
+  eventDate?: Date;
+}
+
+export interface PackageBookingAcceptedPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+}
+
+export interface PackageBookingRejectedPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+  rejectionReason?: string;
+}
+
+export interface PackagePaymentCashChosenPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+  amount?: number;
+}
+
+export interface PackagePaymentConfirmedPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+  amount?: number;
+}
+
+export interface PackageBookingPaymentExpiredPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
 }
 
 export interface DiscountCancelledPayload extends BaseDomainEventPayload {

@@ -449,18 +449,32 @@ export class EventService {
     });
 
     if (!event) throw new NotFoundException('Event not found');
-    // if (event.customerId !== customerId) {
-    //   throw new ForbiddenException('Access denied');
-    // }
+
+    // Child bookings that belong to a PackageEventBooking are managed via
+    // the Packages API. Per docs/implementation_plan.md §3 + the task
+    // "hide package bookings before IN_PROGRESS", they are hidden from the
+    // generic event-bookings list until the package booking has actually
+    // started — once it reaches IN_PROGRESS they rejoin the regular flow.
+    const hiddenPackageBookingIds = await this.prisma.packageEventBooking.findMany({
+      where: {
+        eventId,
+        status: { notIn: ['IN_PROGRESS', 'COMPLETED'] },
+      },
+      select: { id: true },
+    });
+    const hiddenIds = new Set(hiddenPackageBookingIds.map((p) => p.id));
+    const visibleBookings = event.bookings.filter(
+      (b) => !b.packageEventBookingId || !hiddenIds.has(b.packageEventBookingId),
+    );
 
     return {
       message: 'Event bookings retrieved successfully',
       data: {
         ...event,
-        bookings: formatBookingsList(event.bookings),
+        bookings: formatBookingsList(visibleBookings),
       },
     };
-    
+
   }
 // ─────────────────────────────────────────────────────────────
   // GET /events

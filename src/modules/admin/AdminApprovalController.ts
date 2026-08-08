@@ -69,27 +69,27 @@ export class AdminApprovalController {
    * it did, returning "Change request not found" for every packages route).
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
-  @Get('packages')
-  @ApiOperation({
-    summary: 'List packages awaiting review',
-    description: 'Defaults to PENDING_APPROVAL when no status filter is given.',
-  })
-  @ApiResponse({ status: 200, description: 'Packages retrieved successfully' })
-  listPendingPackages(
-    @Query('page') page?: number,
-    @Query('limit') limit?: number,
-    @Query('status') status?: PackageStatus,
-  ) {
-    return this.adminApprovalService.listPendingPackages({ page, limit, status });
-  }
+  // @Get('packages')
+  // @ApiOperation({
+  //   summary: 'List packages awaiting review',
+  //   description: 'Defaults to PENDING_APPROVAL when no status filter is given.',
+  // })
+  // @ApiResponse({ status: 200, description: 'Packages retrieved successfully' })
+  // listPendingPackages(
+  //   @Query('page') page?: number,
+  //   @Query('limit') limit?: number,
+  //   @Query('status') status?: PackageStatus,
+  // ) {
+  //   return this.adminApprovalService.listPendingPackages({ page, limit, status });
+  // }
 
-  @Get('packages/:id')
-  @ApiOperation({ summary: 'Get package details for review' })
-  @ApiResponse({ status: 200, description: 'Package retrieved successfully' })
-  @ApiResponse({ status: 404, description: 'Package not found' })
-  getPackageForReview(@Param('id') id: string) {
-    return this.adminApprovalService.getPackageForReview(id);
-  }
+  // @Get('packages/:id')
+  // @ApiOperation({ summary: 'Get package details for review' })
+  // @ApiResponse({ status: 200, description: 'Package retrieved successfully' })
+  // @ApiResponse({ status: 404, description: 'Package not found' })
+  // getPackageForReview(@Param('id') id: string) {
+  //   return this.adminApprovalService.getPackageForReview(id);
+  // }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get change request details by ID' })
@@ -421,46 +421,46 @@ async approveSubServiceUpdate(
    * above the generic `:id` route near the top of this controller.
    * ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
    */
-  @Post('package')
-  @HttpCode(HttpStatus.OK)
-  @Audit({
-    action: (data: any) =>
-      data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
-    entity: 'Package',
-    entityIdKey: 'packageId',
-  })
-  @ApiOperation({
-    summary: 'Approve or reject a submitted package',
-    description: `
-      The admin approves or rejects a package submitted via POST /provider/packages/:id/submit.
+  // @Post('package')
+  // @HttpCode(HttpStatus.OK)
+  // @Audit({
+  //   action: (data: any) =>
+  //     data?.data?.approvalStatus === 'REJECTED' ? AuditAction.REJECT : AuditAction.APPROVE,
+  //   entity: 'Package',
+  //   entityIdKey: 'packageId',
+  // })
+  // @ApiOperation({
+  //   summary: 'Approve or reject a submitted package',
+  //   description: `
+  //     The admin approves or rejects a package submitted via POST /provider/packages/:id/submit.
 
-      On approval: Package status is updated to ACTIVE and becomes visible to customers.
-      On rejection: Package status is updated to REJECTED with an optional reason; the
-      provider may edit and resubmit it.
-    `,
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Request processed successfully',
-    schema: {
-      example: {
-        success: true,
-        statusCode: 200,
-        message: 'Package approved successfully',
-        data: {
-          packageId: 'uuid-123',
-          packageName: 'Grand Wedding Bundle',
-          approvalStatus: 'ACTIVE',
-          adminMessage: null,
-        },
-      },
-    },
-  })
-  @ApiResponse({ status: 400, description: 'Package is not pending approval' })
-  @ApiResponse({ status: 403, description: 'User is not an admin' })
-  @ApiResponse({ status: 404, description: 'Package not found' })
-  async approvePackage(@Request() req, @Body() dto: ApprovePackageDto) {
-    const adminId = req.user.sub;
-    return this.adminApprovalService.approvePackage(adminId, dto);
-  }
+  //     On approval: Package status is updated to ACTIVE and becomes visible to customers.
+  //     On rejection: Package status is updated to REJECTED with an optional reason; the
+  //     provider may edit and resubmit it.
+  //   `,
+  // })
+  // @ApiResponse({
+  //   status: 200,
+  //   description: 'Request processed successfully',
+  //   schema: {
+  //     example: {
+  //       success: true,
+  //       statusCode: 200,
+  //       message: 'Package approved successfully',
+  //       data: {
+  //         packageId: 'uuid-123',
+  //         packageName: 'Grand Wedding Bundle',
+  //         approvalStatus: 'ACTIVE',
+  //         adminMessage: null,
+  //       },
+  //     },
+  //   },
+  // })
+  // @ApiResponse({ status: 400, description: 'Package is not pending approval' })
+  // @ApiResponse({ status: 403, description: 'User is not an admin' })
+  // @ApiResponse({ status: 404, description: 'Package not found' })
+  // async approvePackage(@Request() req, @Body() dto: ApprovePackageDto) {
+  //   const adminId = req.user.sub;
+  //   return this.adminApprovalService.approvePackage(adminId, dto);
+  // }
 }

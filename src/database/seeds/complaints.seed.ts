@@ -31,7 +31,7 @@ async function upsertComplaint(
     targetType: ComplaintTargetType;
     targetId?: string;
     bookingId?: string;
-    packageBookingId?: string;
+    packageEventBookingId?: string;
     subject: string;
     description: string;
     status: ComplaintStatus;
@@ -58,7 +58,7 @@ async function upsertComplaint(
       targetType:       data.targetType,
       targetId:         data.targetId,
       bookingId:        data.bookingId,
-      packageBookingId: data.packageBookingId,
+      packageEventBookingId: data.packageEventBookingId,
       subject:          data.subject,
       description:      data.description,
       status:           data.status,
@@ -184,7 +184,7 @@ export async function seedComplaints(
   await upsertComplaint(prisma, {
     complainantId:    dina.userId,
     targetType:       ComplaintTargetType.PACKAGE_BOOKING,
-    packageBookingId: packages.cancelledPkgBookingId,
+    packageEventBookingId: packages.cancelledPkgBookingId,
     subject:          'Refund not received after package booking cancellation',
     description:
       'I cancelled my Royal Wedding Package booking over two weeks ago but have not received my refund yet. The cancellation was within the allowed window as per policy.',

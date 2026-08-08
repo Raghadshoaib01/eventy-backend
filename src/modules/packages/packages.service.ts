@@ -1,752 +1,1060 @@
+// src/modules/packages/packages.service.ts
 import {
   BadRequestException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma, PaymentMethod, PaymentStatus, Discount } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
-import { ServicesService } from '../services/services.service';
-import { CreateServiceDto } from '../services/dto/create-service.dto';
-import { CreatePackageDto } from './dto/create-package.dto';
-import { UpdatePackageDto } from './dto/update-package.dto';
-import { AttachServiceDto } from './dto/attach-service.dto';
-import { PriceQuoteQueryDto } from './dto/price-quote-query.dto';
-import { CreatePackageBookingDto } from './dto/create-package-booking.dto';
-import { PaginationDto } from 'src/shared/dto/pagination.dto';
-import { PackagePricingStrategy, PackageStatus, PackageChangeStatus } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DiscountsService } from '../discounts/discounts.service';
-import { DeliveryService } from '../delivery/delivery.service';
+import { CreatePackageDto } from './dto/create-package.dto';
+import { UpdatePackageDto } from './dto/update-package.dto';
+import { BookPackageDto } from './dto/book-package.dto';
+import { PayPackageBookingDto } from './dto/pay-package-booking.dto';
+import {
+  PACKAGE_JOIN_TIMEOUT_HOURS,
+  PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS,
+  PACKAGE_PAYMENT_TIMEOUT_HOURS,
+} from './packages.constants';
 
 /**
- * PackagesService
+ * PackagesService — Provider Packages + Customer Exclusive-package flow
+ * (docs/implementation_plan.md).
  *
- * Provider-facing package CRUD + both add-service paths
- * (docs/packages-implementation-plan.md §5.1–§5.3, §7, §8.1).
+ * Architectural choices (per implementation_plan.md §6 — Option A):
+ *  - One Payment per child Booking. There is NO aggregated package payment.
+ *    Payment.bookings remain the truth. `PackageEventBooking.totalAmount` is a
+ *    convenience cache of the sum of child booking totals.
+ *  - Event.status stays in its existing enum (no PENDING added). A package
+ *    booking creates an Event in DRAFT, transitioning to IN_PROGRESS only
+ *    when the package booking has reached `tryProgressPackageBooking`'s
+ *    "all child bookings paid or terminal" condition.
+ *  - `Booking.packageEventBookingId` is the join between a child booking and
+ *    its parent PackageEventBooking.
  */
 @Injectable()
 export class PackagesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly servicesService: ServicesService,
     private readonly domainEventBus: DomainEventBus,
     private readonly discountsService: DiscountsService,
-    private readonly deliveryService: DeliveryService,
   ) {}
 
-  // ── shared helpers ──────────────────────────────────────────
+  // ─── helpers ────────────────────────────────────────────────────────
 
-  private async getOwnerProvider(userId: string) {
+  private async resolveProvider(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { provider: true },
     });
-    if (!user || !user.provider) {
-      throw new NotFoundException('Provider not found');
-    }
+    if (!user || !user.provider) throw new NotFoundException('Provider not found');
     return user.provider;
   }
 
-  private async getOwnedPackage(userId: string, packageId: string) {
-    const provider = await this.getOwnerProvider(userId);
-    const pkg = await this.prisma.package.findUnique({ where: { id: packageId } });
+  private async getOwnedPackageOrThrow(userId: string, packageId: string) {
+    const provider = await this.resolveProvider(userId);
+    const pkg = await this.prisma.package.findFirst({
+      where: { id: packageId, providerId: provider.id },
+    });
     if (!pkg) throw new NotFoundException('Package not found');
-    if (pkg.providerId !== provider.id) {
+    return pkg;
+  }
+
+  private async getPackageEventBookingOrThrow(
+    packageEventBookingId: string,
+    opts: { providerId?: string; customerId?: string } = {},
+  ) {
+    const pb = await this.prisma.packageEventBooking.findUnique({
+      where: { id: packageEventBookingId },
+      include: {
+        package: { include: { provider: { include: { user: true } } } },
+        customer: true,
+        event: true,
+        bookings: true,
+        payment: true,
+      },
+    });
+    if (!pb) throw new NotFoundException('Package booking not found');
+
+    if (opts.providerId && pb.package.providerId !== opts.providerId) {
       throw new ForbiddenException('Access denied');
     }
-    return { provider, package: pkg };
+    if (opts.customerId && pb.customerId !== opts.customerId) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    return pb;
   }
+
+  // ════════════════════════════════════════════════════════════════════
+  // PROVIDER — package authoring
+  // ════════════════════════════════════════════════════════════════════
 
   /**
-   * Composes exclusive + attached services into one list with a
-   * response-only `membershipType` discriminator (docs §4).
+   * `POST /api/v1/packages`
+   * Creates a DRAFT Package and one `PackageService` row per supplied
+   * service. The serviceIds must all belong to the calling provider — in
+   * this architecture cross-provider composition is out of scope; each row
+   * is therefore born in ACTIVE status, no join-request round-trip.
    */
-  private async composeDetail(packageId: string) {
-    const pkg = await this.prisma.package.findUnique({
-      where: { id: packageId },
-      include: {
-        exclusiveServices: { include: { serviceType: true } },
-        attachedItems: { include: { service: { include: { serviceType: true } } } },
-      },
-    });
-    if (!pkg) throw new NotFoundException('Package not found');
-
-    const { exclusiveServices, attachedItems, ...rest } = pkg;
-    const services = [
-      ...exclusiveServices.map((s) => ({ ...s, membershipType: 'EXCLUSIVE' as const, isRequired: true })),
-      ...attachedItems.map((i) => ({
-        ...i.service,
-        membershipType: 'ATTACHED' as const,
-        isRequired: i.isRequired,
-        packageItemId: i.id,
-      })),
-    ];
-
-     const indicativePrice = this.computeIndicativePrice(pkg, services);
-    const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId);
-    const pricing =
-      indicativePrice != null
-        ? this.discountsService.computePriceWithDiscount(indicativePrice, discount)
-        : { originalPrice: null, finalPrice: null, discountAmount: 0, discount: discount ? this.discountsService.toSummary(discount) : null };
-
-    return { ...rest, services, ...pricing };
-  }
-
-  /** True if `serviceId` is this package's Hall (docs §7, §8.1). */
-  private isHallService(services: Array<{ id: string; serviceType: { isVenue: boolean } }>, serviceId: string) {
-    const svc = services.find((s) => s.id === serviceId);
-    return !!svc?.serviceType.isVenue;
-  }
-
-  // ── CRUD ─────────────────────────────────────────────────────
-
   async createPackage(userId: string, dto: CreatePackageDto) {
-    const provider = await this.getOwnerProvider(userId);
+    const provider = await this.resolveProvider(userId);
 
-    const pkg = await this.prisma.package.create({
-      data: {
-        providerId: provider.id,
-        name: dto.name,
-        description: dto.description,
-        pricingStrategy: dto.pricingStrategy ?? PackagePricingStrategy.FLAT_SUM,
-        status: PackageStatus.DRAFT,
-      },
+    const serviceIds = [...new Set(dto.services.map((s) => s.serviceId))];
+    const owned = await this.prisma.service.findMany({
+      where: { id: { in: serviceIds }, providerId: provider.id },
+      select: { id: true, isPackaged: true },
     });
 
-    return { message: 'Package created successfully', data: pkg };
+    if (owned.length !== serviceIds.length) {
+      const found = new Set(owned.map((s) => s.id));
+      const missing = serviceIds.filter((id) => !found.has(id));
+      throw new BadRequestException(
+        `Services not found or not owned by this provider: ${missing.join(', ')}`,
+      );
+    }
+
+    const packageRow = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.package.create({
+        data: {
+          providerId: provider.id,
+          name: dto.name,
+          description: dto.description ?? null,
+          discountPercentage: dto.discountPercentage ?? 0,
+          status: 'DRAFT',
+        },
+      });
+
+      await tx.packageService.createMany({
+        data: serviceIds.map((serviceId) => ({
+          packageId: created.id,
+          providerId: provider.id,
+          serviceId,
+          status: 'ACTIVE',
+        })),
+      });
+
+      return created;
+    });
+
+    return {
+      message: 'Package created (DRAFT). Activate once requirements are met.',
+      data: packageRow,
+    };
   }
 
+  /**
+   * `PATCH /api/v1/packages/:id`
+   * Update name/description/discount while the package is DRAFT.
+   */
   async updatePackage(userId: string, packageId: string, dto: UpdatePackageDto) {
-    await this.getOwnedPackage(userId, packageId);
-
-    const pkg = await this.prisma.package.update({
-      where: { id: packageId },
-      data: { name: dto.name, description: dto.description },
-    });
-
-    return { message: 'Package updated successfully', data: pkg };
-  }
-
-  async listMyPackages(userId: string) {
-    const provider = await this.getOwnerProvider(userId);
-
-    const packages = await this.prisma.package.findMany({
-      where: { providerId: provider.id },
-      include: {
-        _count: { select: { exclusiveServices: true, attachedItems: true } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    return { message: 'Packages retrieved successfully', data: packages };
-  }
-
-  async getPackageById(userId: string, packageId: string) {
-    await this.getOwnedPackage(userId, packageId);
-    const detail = await this.composeDetail(packageId);
-    return { message: 'Package retrieved successfully', data: detail };
-  }
-
-  async deletePackage(userId: string, packageId: string) {
-    const { package: pkg } = await this.getOwnedPackage(userId, packageId);
-
-    if (pkg.status !== PackageStatus.DRAFT && pkg.status !== PackageStatus.REJECTED) {
+    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
+    if (pkg.status !== 'DRAFT') {
       throw new BadRequestException(
-        `Package cannot be deleted while it is ${pkg.status} — only DRAFT or REJECTED packages can be deleted`,
+        `Package can only be edited while DRAFT (current status: ${pkg.status})`,
       );
-    }
-
-    // Cascade is handled at the DB level: Service.packageId and
-    // PackageItem.packageId both have onDelete: Cascade
-    // (docs/packages-implementation-plan.md §2.2, §2.3).
-    await this.prisma.package.delete({ where: { id: packageId } });
-
-    return { message: 'Package deleted successfully', data: null };
-  }
-
-  // ── adding services (docs §5.1) ─────────────────────────────
-
-  /** Path 1 — create a package-exclusive service (docs §5.3). */
-  async createExclusiveService(
-    userId: string,
-    packageId: string,
-    dto: CreateServiceDto,
-    serviceLogo?: Express.Multer.File,
-    businessFile?: Express.Multer.File,
-    subServiceMedia?: Express.Multer.File[],
-  ) {
-    await this.getOwnedPackage(userId, packageId);
-
-    return this.servicesService.createService(
-      userId,
-      dto,
-      serviceLogo,
-      businessFile,
-      subServiceMedia,
-      packageId,
-    );
-  }
-
-  /** Path 2 — attach an existing service the caller already owns (docs §2.3, §2.5). */
-  async attachExistingService(userId: string, packageId: string, dto: AttachServiceDto) {
-    const { provider } = await this.getOwnedPackage(userId, packageId);
-
-    const service = await this.prisma.service.findUnique({ where: { id: dto.serviceId } });
-    if (!service) throw new NotFoundException('Service not found');
-
-    if (service.providerId !== provider.id) {
-      throw new ForbiddenException(
-        'A package can only contain services owned by the same provider (docs/packages-implementation-plan.md §2.3)',
-      );
-    }
-    if (service.isPackaged) {
-      throw new BadRequestException('Cannot attach a package-exclusive service — it already belongs to another package');
-    }
-    if (service.approvalStatus !== 'ACTIVE') {
-      throw new BadRequestException('Only an approved, active service can be attached to a package');
-    }
-
-    const existing = await this.prisma.packageItem.findUnique({
-      where: { packageId_serviceId: { packageId, serviceId: dto.serviceId } },
-    });
-    if (existing) {
-      throw new BadRequestException('This service is already attached to the package');
-    }
-
-    const item = await this.prisma.packageItem.create({
-      data: {
-        packageId,
-        serviceId: dto.serviceId,
-        isRequired: dto.isRequired ?? true,
-        addedByUserId: userId,
-      },
-    });
-
-    // Composition changed — any active discount on this package needs the
-    // provider's fresh sign-off before it applies again (docs/discounts-implementation-plan.md §3).
-    await this.discountsService.suspendDiscountsForPackage(packageId);
-
-    return { message: 'Service attached to package successfully', data: item };
-  }
-
-  /** Any PackageBooking not yet COMPLETED/CANCELLED (docs §9's "active booking" definition). */
-  private async hasActivePackageBookings(packageId: string) {
-    const count = await this.prisma.packageBooking.count({
-      where: { packageId, status: { notIn: ['COMPLETED', 'CANCELLED'] } },
-    });
-    return count > 0;
-  }
-
-  /**
-   * Removal — the Hall can never be removed this way (docs §8.1). A non-Hall
-   * removal is deferred via PackageChangeRequest when the package is ACTIVE
-   * with active bookings (docs §9); it applies immediately otherwise. Adding
-   * a service is always safe to apply immediately (a new optional item can
-   * never invalidate a booking that already committed to a smaller
-   * selection), so only removal needs this deferral path.
-   */
-  async removeService(userId: string, packageId: string, serviceId: string) {
-    const { package: pkg } = await this.getOwnedPackage(userId, packageId);
-
-    const detail = await this.composeDetail(packageId);
-    const target = detail.services.find((s) => s.id === serviceId);
-    if (!target) throw new NotFoundException('This service is not part of the package');
-
-    if (this.isHallService(detail.services as any, serviceId)) {
-      throw new BadRequestException(
-        'The Hall service can never be removed from a package — delete the entire package instead (docs/packages-implementation-plan.md §8.1)',
-      );
-    }
-
-    if (pkg.status === PackageStatus.ACTIVE && (await this.hasActivePackageBookings(packageId))) {
-      await this.prisma.packageChangeRequest.upsert({
-        where: { packageId },
-        update: { payload: { removeServiceId: serviceId }, status: PackageChangeStatus.PENDING, requestedByUserId: userId },
-        create: { packageId, payload: { removeServiceId: serviceId }, status: PackageChangeStatus.PENDING, requestedByUserId: userId },
-      });
-
-      return {
-        message:
-          'Package has active bookings — this change has been scheduled and will apply automatically once they complete',
-        data: null,
-      };
-    }
-
-    if (target.membershipType === 'EXCLUSIVE') {
-      await this.prisma.service.delete({ where: { id: serviceId } });
-    } else {
-      await this.prisma.packageItem.delete({
-        where: { packageId_serviceId: { packageId, serviceId } },
-      });
-    }
-
-    await this.discountsService.suspendDiscountsForPackage(packageId);
-
-    return { message: 'Service removed from package successfully', data: null };
-  }
-
-  /**
-   * Cancel a scheduled non-Hall edit before it applies (docs §9).
-   */
-  async cancelPendingChange(userId: string, packageId: string) {
-    await this.getOwnedPackage(userId, packageId);
-
-    const pending = await this.prisma.packageChangeRequest.findUnique({ where: { packageId } });
-    if (!pending || pending.status !== PackageChangeStatus.PENDING) {
-      throw new NotFoundException('No pending scheduled change for this package');
-    }
-
-    await this.prisma.packageChangeRequest.update({
-      where: { id: pending.id },
-      data: { status: PackageChangeStatus.CANCELLED },
-    });
-
-    return { message: 'Scheduled change cancelled', data: null };
-  }
-
-  /**
-   * Called once a PackageBooking reaches a terminal status (docs §9) — applies
-   * a pending scheduled edit if no other active booking remains for the
-   * package. No-op if there's nothing pending or bookings are still active.
-   *
-   * TODO(Phase 6): wire this from a listener on the package-booking-completed/
-   * cancelled event once PackageBooking has a real creation flow — there is
-   * nothing to trigger it from yet, so this is dead code in practice until then.
-   */
-  async applyPendingChangeIfEligible(packageId: string) {
-    if (await this.hasActivePackageBookings(packageId)) return;
-
-    const pending = await this.prisma.packageChangeRequest.findUnique({ where: { packageId } });
-    if (!pending || pending.status !== PackageChangeStatus.PENDING) return;
-
-    const payload = pending.payload as { removeServiceId?: string };
-    if (payload.removeServiceId) {
-      const service = await this.prisma.service.findUnique({ where: { id: payload.removeServiceId } });
-      if (service) {
-        if (service.isPackaged) {
-          await this.prisma.service.delete({ where: { id: service.id } });
-        } else {
-          await this.prisma.packageItem.deleteMany({ where: { packageId, serviceId: service.id } });
-        }
-      }
-    }
-
-    await this.prisma.packageChangeRequest.update({
-      where: { id: pending.id },
-      data: { status: PackageChangeStatus.APPLIED, appliedAt: new Date() },
-    });
-
-    await this.discountsService.suspendDiscountsForPackage(packageId);
-
-    const pkg = await this.prisma.package.findUnique({
-      where: { id: packageId },
-      include: { provider: { include: { user: true } } },
-    });
-    if (pkg) {
-      this.domainEventBus.packageChangeApplied({
-        actorId: pending.requestedByUserId,
-        targetUserId: pkg.provider.userId,
-        entityId: pkg.id,
-        packageId: pkg.id,
-        packageName: pkg.name,
-      });
-    }
-  }
-
-  // ── submission (docs §7) ────────────────────────────────────
-
-  async submitPackage(userId: string, packageId: string) {
-    const { package: pkg } = await this.getOwnedPackage(userId, packageId);
-
-    if (pkg.status !== PackageStatus.DRAFT && pkg.status !== PackageStatus.REJECTED) {
-      throw new BadRequestException(`Package cannot be submitted while it is ${pkg.status}`);
-    }
-
-    const detail = await this.composeDetail(packageId);
-
-    if (detail.services.length === 0) {
-      throw new BadRequestException('Package must include at least one service');
-    }
-
-    if (pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
-      const hallServices = detail.services.filter((s) => (s as any).serviceType.isVenue);
-
-      if (hallServices.length !== 1) {
-        throw new BadRequestException(
-          hallServices.length === 0
-            ? 'Package must include exactly one approved Hall service'
-            : 'Package must include exactly one Hall service, not more than one',
-        );
-      }
-      if (hallServices[0].approvalStatus !== 'ACTIVE') {
-        throw new BadRequestException('The package\'s Hall service must be an approved (ACTIVE) service');
-      }
-      if (detail.services.length < 2) {
-        throw new BadRequestException('Package must include at least one service besides the Hall');
-      }
     }
 
     const updated = await this.prisma.package.update({
       where: { id: packageId },
-      data: { status: PackageStatus.PENDING_APPROVAL, reviewNote: null, reviewedById: null, reviewedAt: null },
+      data: {
+        ...(dto.name !== undefined && { name: dto.name }),
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.discountPercentage !== undefined && {
+          discountPercentage: dto.discountPercentage,
+        }),
+      },
     });
 
-    return { message: 'Package submitted for admin review', data: updated };
-  }
-
-  // ── public browse / detail / price-quote (docs §5.5, §10, §11) ─
-
-  /** True if `service` is a Hall (ServiceType.isVenue) with a resolvable capacity/price. */
-  private findHall(services: any[]) {
-    return services.find((s) => s.serviceType?.isVenue);
-  }
-
-  private hallPriceFor(hall: any, guestCount: number) {
-    if (hall.priceType === 'PER_GUEST') {
-      return (hall.price ?? 0) * guestCount;
-    }
-    return hall.price ?? 0;
-  }
-
-   /** Shared indicative price used by both listPublicPackages and composeDetail. */
-  private computeIndicativePrice(pkg: { pricingStrategy: PackagePricingStrategy }, services: any[]): number | null {
-    if (pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
-      const hall = this.findHall(services);
-      return hall ? this.hallPriceFor(hall, hall.minCapacity ?? 1) : null;
-    }
-    return services.reduce((sum, s: any) => sum + (s.price ?? 0), 0);
-  }
-
-  async listPublicPackages(query: PaginationDto) {
-    const { page = 1, limit = 10 } = query;
-    const skip = (page - 1) * limit;
-
-    const where = { status: PackageStatus.ACTIVE };
-
-    const [packages, total] = await this.prisma.$transaction([
-      this.prisma.package.findMany({
-        where,
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          exclusiveServices: { include: { serviceType: true } },
-          attachedItems: { include: { service: { include: { serviceType: true } } } },
-        },
-      }),
-      this.prisma.package.count({ where }),
-    ]);
-    const discountMap = await this.discountsService.getActiveAutoDiscountsForPackages(packages.map((p) => p.id));
-    const items = packages.map((pkg) => {
-      const { exclusiveServices, attachedItems, ...rest } = pkg;
-      const services = [
-        ...exclusiveServices,
-        ...attachedItems.map((i) => i.service),
-      ];
-
-      const startingPrice = this.computeIndicativePrice(pkg, services);
-      const discount = discountMap.get(pkg.id) ?? null;
-      const pricing =
-        startingPrice != null
-          ? this.discountsService.computePriceWithDiscount(startingPrice, discount)
-          : { originalPrice: null, finalPrice: null, discountAmount: 0, discount: discount ? this.discountsService.toSummary(discount) : null };
-
-
-      return { ...rest, startingPrice, serviceCount: services.length,...pricing };
-    });
-
-    return {
-      message: 'Packages retrieved successfully',
-      data: { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } },
-    };
-  }
-
-  async getPublicPackageDetail(packageId: string) {
-    const pkg = await this.prisma.package.findUnique({ where: { id: packageId } });
-    if (!pkg || pkg.status !== PackageStatus.ACTIVE) {
-      throw new NotFoundException('Package not found');
-    }
-
-    const detail = await this.composeDetail(packageId);
-    return { message: 'Package retrieved successfully', data: detail };
+    return { message: 'Package updated', data: updated };
   }
 
   /**
-   * Shared pricing core for both the live price-quote endpoint and actual
-   * booking creation (docs §11, §12.3) — the two must never compute this
-   * differently.
+   * `GET /api/v1/packages/my-packages`
    */
-  private computePricing(
-    pkg: { pricingStrategy: PackagePricingStrategy },
-    services: any[],
-    guestCountInput: number | undefined,
-    optionalServiceIdsInput: string[] | undefined,
-  ) {
-    const requiredServices = services.filter((s) => s.isRequired);
-    const optionalServices = services.filter((s) => !s.isRequired);
-
-    let hallPrice = 0;
-    let guestCount = guestCountInput ?? 0;
-    let hall: any = null;
-
-    if (pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
-      hall = this.findHall(requiredServices);
-      if (!hall) throw new BadRequestException('Package has no Hall service to price against');
-      if (!guestCountInput) {
-        throw new BadRequestException('guestCount is required for a GUEST_BASED package');
-      }
-      if (hall.minCapacity && guestCount < hall.minCapacity) {
-        throw new BadRequestException(`guestCount must be at least ${hall.minCapacity}`);
-      }
-      if (hall.maxCapacity && guestCount > hall.maxCapacity) {
-        throw new BadRequestException(`guestCount cannot exceed ${hall.maxCapacity}`);
-      }
-      hallPrice = this.hallPriceFor(hall, guestCount);
-    } else {
-      // FLAT_SUM: every required item's own price, guest count not applicable
-      hallPrice = requiredServices.reduce((sum, s) => sum + (s.price ?? 0), 0);
-      guestCount = 0;
-    }
-
-    const selectedOptionalIds = new Set(optionalServiceIdsInput ?? []);
-    const selectedOptional = optionalServices.filter((s) => selectedOptionalIds.has(s.id));
-    const invalidIds = [...selectedOptionalIds].filter((id) => !optionalServices.some((s) => s.id === id));
-    if (invalidIds.length) {
-      throw new BadRequestException(`Not a valid optional item for this package: ${invalidIds.join(', ')}`);
-    }
-
-    // For GUEST_BASED, a required item other than the Hall itself (e.g. a
-    // package-exclusive add-on marked isRequired=true) is priced at its own
-    // flat price and folded in here — verified live: without this, such an
-    // item's price silently vanished from the subtotal entirely. The
-    // `optionalServicesTotal` field name predates this case but still
-    // correctly represents "everything beyond the Hall's own price."
-    const otherRequiredTotal =
-      pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED
-        ? requiredServices.filter((s) => s.id !== hall?.id).reduce((sum, s) => sum + (s.price ?? 0), 0)
-        : 0;
-
-    const optionalServicesTotal = otherRequiredTotal + selectedOptional.reduce((sum, s) => sum + (s.price ?? 0), 0);
-    const subtotal = hallPrice + optionalServicesTotal;
-
-    return { requiredServices, selectedOptional, hall, guestCount, hallPrice, optionalServicesTotal, subtotal };
-  }
-
-  async getPriceQuote(packageId: string, query: PriceQuoteQueryDto) {
-    const pkg = await this.prisma.package.findUnique({ where: { id: packageId } });
-    if (!pkg || pkg.status !== PackageStatus.ACTIVE) {
-      throw new NotFoundException('Package not found');
-    }
-
-    const detail = await this.composeDetail(packageId);
-    const { guestCount, hallPrice, optionalServicesTotal, subtotal, selectedOptional } = this.computePricing(
-      pkg,
-      detail.services as any[],
-      query.guestCount,
-      query.optionalServiceIds,
-    );
-
-    // Discount applied AFTER subtotal, the package's own discount only —
-    // never combined with a component service's own discount (docs §4, §11.1 step 4).
- const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId, query.discountCode);
-    const pricing = this.discountsService.computePriceWithDiscount(subtotal, discount);
-
-    return {
-      message: 'Price quote calculated successfully',
-      data: {
-        guestCount: pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED ? guestCount : null,
-        hallPrice,
-        optionalServicesTotal,
-        selectedOptionalServiceIds: selectedOptional.map((s) => s.id),
-        subtotal,
-        discountAmount: pricing.discountAmount,
-        totalAmount: pricing.finalPrice,
-        discount: pricing.discount,
+  async getMyPackages(userId: string) {
+    const provider = await this.resolveProvider(userId);
+    const packages = await this.prisma.package.findMany({
+      where: { providerId: provider.id },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        services: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+        eventBookings: { select: { id: true, status: true } },
+        discounts: { where: { status: 'ACTIVE' } },
       },
-    };
+    });
+    return { message: 'Packages retrieved successfully', data: packages };
   }
 
-  // ── booking (docs §12) ──────────────────────────────────────
-
-  /** Any PackageBooking that hasn't reached a terminal status. */
-  private isPackageBookingActive(status: string) {
-    return status !== 'COMPLETED' && status !== 'CANCELLED';
-  }
-
-  async bookPackage(userId: string, packageId: string, dto: CreatePackageBookingDto) {
-    const pkg = await this.prisma.package.findUnique({ where: { id: packageId } });
-    if (!pkg || pkg.status !== PackageStatus.ACTIVE) {
-      throw new NotFoundException('Package not found');
-    }
-
-    if (dto.eventId) {
-      const event = await this.prisma.event.findUnique({ where: { id: dto.eventId } });
-      if (!event || event.customerId !== userId) {
-        throw new BadRequestException('eventId must reference one of your own events');
-      }
-    }
-
-    const detail = await this.composeDetail(packageId);
-    const services = detail.services as any[];
-
-    const { requiredServices, selectedOptional, guestCount, hallPrice, optionalServicesTotal, subtotal } =
-      this.computePricing(pkg, services, dto.guestCount, dto.optionalServiceIds);
-
-    const includedServices = [...requiredServices, ...selectedOptional];
-
-    // Availability re-check (docs §12.6) — every included service's own
-    // provider must have no conflicting BlockedSlot on the event date.
-    if (dto.eventId) {
-      const event = await this.prisma.event.findUnique({ where: { id: dto.eventId } });
-      if (event) {
-        const conflicts = await this.prisma.blockedSlot.findMany({
-          where: {
-            serviceId: { in: includedServices.map((s) => s.id) },
-            date: event.eventDate,
+  /**
+   * `GET /api/v1/packages/:id` — provider view
+   */
+  async getPackageForProvider(userId: string, packageId: string) {
+    await this.getOwnedPackageOrThrow(userId, packageId);
+    const pkg = await this.prisma.package.findUnique({
+      where: { id: packageId },
+      include: {
+        services: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+        eventBookings: {
+          include: {
+            customer: { select: { fullName: true, email: true } },
+            event: { select: { name: true, eventDate: true, eventLocation: true } },
+            bookings: {
+              include: {
+                service: { include: { serviceType: { select: { name: true } } } },
+                payment: true,
+              },
+            },
+            payment: true,
           },
-        });
-        if (conflicts.length) {
-          throw new BadRequestException('One or more included services are unavailable on the requested date');
-        }
-      }
-    }
-
-    // Discount resolved and frozen here, before payment — the package's own
-    // discount only, applied after subtotal (docs §4, §11.1, §12.3 step 4).
-    const discount = await this.discountsService.resolveActiveDiscountForPackage(packageId, dto.discountCode);
-    const pricing = this.discountsService.computePriceWithDiscount(subtotal, discount);
-    const discountAmount = pricing.discountAmount;
-    const totalAmount = pricing.finalPrice;
-
-    const lineAmount = (service: any) =>
-      service.isRequired && service.serviceType?.isVenue ? hallPrice : (service.price ?? 0);
-
-    const result = await this.prisma.$transaction(async (tx) => {
-      const packageBooking = await tx.packageBooking.create({
-        data: {
-          packageId,
-          customerId: userId,
-          eventId: dto.eventId,
-          guestCount,
-          status: 'PENDING_PAYMENT',
-          hallPrice,
-          optionalServicesTotal,
-          subtotal,
-          discountId: discount?.id,
-          discountAmount: discount ? discountAmount : undefined,
-          totalAmount,
         },
-      });
-
-      await tx.packageBookingItem.createMany({
-        data: includedServices.map((s) => ({
-          packageBookingId: packageBooking.id,
-          serviceId: s.id,
-          wasRequired: s.isRequired,
-          priceAtBooking: lineAmount(s),
-        })),
-      });
-
-      // One Booking per included service, already CONFIRMED — price and
-      // inclusion were already settled during configuration, so this is a
-      // fixed-price "instant book," not a quote negotiation (docs §12.3).
-      // The discount is apportioned pro-rata across the lines by their share
-      // of the pre-discount subtotal (docs §12.4's worked formula) — each
-      // child Payment will simply charge this frozen finalAmount later.
-      for (const service of includedServices) {
-        const priceAtBooking = lineAmount(service);
-        const share = subtotal > 0 ? priceAtBooking / subtotal : 0;
-        const finalAmount = priceAtBooking - discountAmount * share;
-
-        await tx.booking.create({
-          data: {
-            customerId: userId,
-            providerId: service.providerId,
-            serviceId: service.id,
-            eventId: dto.eventId,
-            packageBookingId: packageBooking.id,
-            totalAmount: priceAtBooking,
-            finalAmount,
-            status: 'CONFIRMED',
-          },
-        });
-      }
-
-      return packageBooking;
+        discounts: true,
+      },
     });
+    return { message: 'Package retrieved successfully', data: pkg };
+  }
 
-    // Mirrors the standalone flow (docs/delivery-implementation-plan.md §3) —
-    // run after commit, once each child Booking is actually visible; a
-    // no-op for any service whose type doesn't require delivery.
-    const childBookings = await this.prisma.booking.findMany({
-      where: { packageBookingId: result.id },
-      select: { id: true },
-    });
-    for (const b of childBookings) {
-      await this.deliveryService.createIfRequired(b.id);
+  /**
+   * `PATCH /api/v1/packages/:id/activate`
+   * Requires ≥ 2 active services (implementation_plan.md §3). Promotes
+   * DRAFT → ACTIVE, suspends any PACKAGE-scope discounts that need
+   * reconfirmation (composition has changed).
+   */
+  async activatePackage(userId: string, packageId: string) {
+    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
+    if (pkg.status !== 'DRAFT') {
+      throw new BadRequestException(
+        `Only DRAFT packages can be activated (current status: ${pkg.status})`,
+      );
     }
 
-    return { message: 'Package booked successfully — proceed to payment', data: result };
-  }
-
-  async getPackageBookingById(userId: string, packageBookingId: string) {
-    const pb = await this.prisma.packageBooking.findUnique({
-      where: { id: packageBookingId },
-      include: { bookings: { include: { payment: true, service: { include: { serviceType: true } } } }, package: true },
+    const activeCount = await this.prisma.packageService.count({
+      where: { packageId, status: 'ACTIVE' },
     });
-    if (!pb) throw new NotFoundException('Package booking not found');
-    if (pb.customerId !== userId) throw new ForbiddenException('Access denied');
+    if (activeCount < 2) {
+      throw new BadRequestException(
+        'A package needs at least 2 active services before activation',
+      );
+    }
 
-    return { message: 'Package booking retrieved successfully', data: pb };
+    const updated = await this.prisma.package.update({
+      where: { id: packageId },
+      data: { status: 'ACTIVE' },
+    });
+
+    await this.discountsService.suspendDiscountsForPackage(packageId);
+
+    this.domainEventBus.packageActivated({
+      actorId: userId,
+      targetUserId: userId,
+      entityId: packageId,
+      packageId,
+      packageName: updated.name,
+      ownerProviderName: '', // populated by listener via metadata; safe to leave blank
+    });
+
+    return { message: 'Package activated', data: updated };
   }
 
-  /** Cancellation is only possible before payment completes (docs §12.5). */
-  async cancelPackageBooking(userId: string, packageBookingId: string, reason?: string) {
-    const pb = await this.prisma.packageBooking.findUnique({ where: { id: packageBookingId } });
-    if (!pb) throw new NotFoundException('Package booking not found');
-    if (pb.customerId !== userId) throw new ForbiddenException('Access denied');
+  // ════════════════════════════════════════════════════════════════════
+  // PROVIDER — package join-request inbox (kept thin: this architecture
+  // does not support cross-provider composition, so the inbox is empty by
+  // design — we still expose the endpoints for forward compatibility).
+  // ════════════════════════════════════════════════════════════════════
 
-    if (pb.status !== 'PENDING_PAYMENT') {
+  /**
+   * `GET /api/v1/packages/join-requests/pending`
+   */
+  async getPendingJoinRequests(userId: string) {
+    await this.resolveProvider(userId);
+    return { message: 'No pending join requests', data: [] };
+  }
+
+  /**
+   * `GET /api/v1/packages/join-requests/:id`
+   */
+  async getJoinRequestDetails(userId: string, _requestId: string) {
+    await this.resolveProvider(userId);
+    return { message: 'Join request not found', data: null };
+  }
+
+  /**
+   * `POST /api/v1/packages/:id/join/accept`
+   */
+  async acceptJoinRequest(userId: string, _packageId: string) {
+    await this.resolveProvider(userId);
+    return { message: 'No join request to accept', data: null };
+  }
+
+  /**
+   * `POST /api/v1/packages/:id/join/reject`
+   */
+  async rejectJoinRequest(userId: string, _packageId: string) {
+    await this.resolveProvider(userId);
+    return { message: 'No join request to reject', data: null };
+  }
+
+  /**
+   * `GET /api/v1/packages/joined`
+   * In single-provider-only mode, every package the provider owns IS the
+   * one they've "joined" via PackageService rows. Reuse the my-packages
+   * view but filter to ACTIVE.
+   */
+  async getJoinedPackages(userId: string) {
+    const provider = await this.resolveProvider(userId);
+    const packages = await this.prisma.package.findMany({
+      where: {
+        providerId: provider.id,
+        status: 'ACTIVE',
+      },
+      include: {
+        services: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+        eventBookings: { select: { id: true, status: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { message: 'Joined packages retrieved successfully', data: packages };
+  }
+
+  /**
+   * `GET /api/v1/packages/joined/:id`
+   */
+  async getJoinedPackageDetails(userId: string, packageId: string) {
+    return this.getPackageForProvider(userId, packageId);
+  }
+
+  /**
+   * `POST /api/v1/packages/:id/leave`
+   * In single-provider-only mode, "leaving" means cancelling the package
+   * outright. Only valid while no active bookings reference it.
+   */
+  async leavePackage(userId: string, packageId: string) {
+    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
+    if (pkg.status === 'CANCELLED') {
+      throw new BadRequestException('Package is already cancelled');
+    }
+
+    const activeBookings = await this.prisma.packageEventBooking.count({
+      where: {
+        packageId,
+        status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
+      },
+    });
+    if (activeBookings > 0) {
       throw new BadRequestException(
-        'A package booking can only be cancelled before payment completes (docs/packages-implementation-plan.md §12.5)',
+        'Cannot leave a package that has active bookings — cancel them first',
+      );
+    }
+
+    const updated = await this.prisma.package.update({
+      where: { id: packageId },
+      data: { status: 'CANCELLED' },
+    });
+
+    return { message: 'Package cancelled (left)', data: updated };
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // PROVIDER — package-event-booking inbox
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * `GET /api/v1/packages/bookings/pending`
+   */
+  async getPendingPackageBookings(userId: string) {
+    const provider = await this.resolveProvider(userId);
+    const items = await this.prisma.packageEventBooking.findMany({
+      where: { package: { providerId: provider.id }, status: 'PENDING' },
+      include: {
+        package: { select: { id: true, name: true } },
+        customer: { select: { id: true, fullName: true, email: true } },
+        event: { select: { name: true, eventDate: true, eventLocation: true } },
+        bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { message: 'Pending package bookings retrieved', data: items };
+  }
+
+  /**
+   * `GET /api/v1/packages/bookings/payment-pending`
+   */
+  async getPaymentPendingPackageBookings(userId: string) {
+    const provider = await this.resolveProvider(userId);
+    const items = await this.prisma.packageEventBooking.findMany({
+      where: {
+        package: { providerId: provider.id },
+        status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] },
+      },
+      include: {
+        package: { select: { id: true, name: true } },
+        customer: { select: { id: true, fullName: true, email: true } },
+        event: { select: { name: true, eventDate: true } },
+        bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+      },
+      orderBy: { updatedAt: 'desc' },
+    });
+    return { message: 'Payment-pending package bookings retrieved', data: items };
+  }
+
+  /**
+   * `GET /api/v1/packages/bookings/:id` — owner view
+   */
+  async getPackageBookingForProvider(userId: string, packageEventBookingId: string) {
+    const provider = await this.resolveProvider(userId);
+    return this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      providerId: provider.id,
+    });
+  }
+
+  /**
+   * `POST /api/v1/packages/bookings/:id/accept`
+   * PENDING → CONFIRMED. Child bookings also flip to CONFIRMED so that
+   * payment can flow through PaymentsService.
+   */
+  async acceptPackageBooking(userId: string, packageEventBookingId: string) {
+    const provider = await this.resolveProvider(userId);
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      providerId: provider.id,
+    });
+
+    if (pb.status !== 'PENDING') {
+      throw new BadRequestException(
+        `Package booking cannot be accepted while it is ${pb.status}`,
       );
     }
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.packageBooking.update({
-        where: { id: packageBookingId },
-        data: { status: 'CANCELLED', cancelledAt: new Date(), cancellationReason: reason },
+      await tx.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'CONFIRMED' },
       });
       await tx.booking.updateMany({
-        where: { packageBookingId },
-        data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledBy: 'CUSTOMER', cancellationReason: reason },
+        where: { packageEventBookingId, status: 'PENDING' },
+        data: { status: 'CONFIRMED' },
       });
     });
 
-    return { message: 'Package booking cancelled', data: null };
+    this.domainEventBus.packageBookingAccepted({
+      actorId: userId,
+      targetUserId: pb.customerId,
+      entityId: packageEventBookingId,
+      packageId: pb.packageId,
+      packageName: pb.package.name,
+      packageEventBookingId,
+    });
+
+    return { message: 'Package booking accepted', data: { id: packageEventBookingId, status: 'CONFIRMED' } };
   }
 
   /**
-   * Called by PaymentsService once a package-sourced booking's payment
-   * clears (docs §12.4) — advances PackageBooking → CONFIRMED and every
-   * child Booking → IN_PROGRESS together, once *all* of them are paid.
+   * `POST /api/v1/packages/bookings/:id/reject`
    */
-  async tryProgressPackageBooking(packageBookingId: string) {
-    const pb = await this.prisma.packageBooking.findUnique({
-      where: { id: packageBookingId },
-      include: { bookings: { include: { payment: true } } },
+  async rejectPackageBooking(
+    userId: string,
+    packageEventBookingId: string,
+    reason?: string,
+  ) {
+    const provider = await this.resolveProvider(userId);
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      providerId: provider.id,
     });
-    if (!pb || pb.status !== 'PENDING_PAYMENT') return;
 
-    const allPaid = pb.bookings.length > 0 && pb.bookings.every((b) => b.payment?.status === 'PAID');
-    if (!allPaid) return;
+    if (!['PENDING', 'CONFIRMED', 'PENDING_PAYMENT'].includes(pb.status)) {
+      throw new BadRequestException(
+        `Package booking cannot be rejected while it is ${pb.status}`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'REJECTED' },
+      });
+      // Cancel any child bookings that haven't already terminated
+      await tx.booking.updateMany({
+        where: {
+          packageEventBookingId,
+          status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+        },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledBy: 'PROVIDER',
+          cancellationReason: reason ?? 'Package booking rejected by provider',
+        },
+      });
+    });
+
+    this.domainEventBus.packageBookingRejected({
+      actorId: userId,
+      targetUserId: pb.customerId,
+      entityId: packageEventBookingId,
+      packageId: pb.packageId,
+      packageName: pb.package.name,
+      packageEventBookingId,
+      rejectionReason: reason,
+    });
+
+    return { message: 'Package booking rejected', data: { id: packageEventBookingId, status: 'REJECTED' } };
+  }
+
+  /**
+   * `POST /api/v1/packages/bookings/:id/confirm-payment`
+   * Provider confirms a CASH payment for the package booking. We delegate
+   * per-booking confirmation to PaymentsService — for each child booking
+   * that has a CASH Payment in PROCESSING, mark it PAID.
+   */
+  async confirmPackageCashPayment(userId: string, packageEventBookingId: string) {
+    const provider = await this.resolveProvider(userId);
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      providerId: provider.id,
+    });
+
+    if (pb.status !== 'PENDING_PAYMENT' && pb.status !== 'CONFIRMED') {
+      throw new BadRequestException(
+        `Package booking cannot have its payment confirmed while it is ${pb.status}`,
+      );
+    }
+
+    // Find any CASH payments under child bookings still in PROCESSING and mark them PAID.
+    const childBookings = await this.prisma.booking.findMany({
+      where: { packageEventBookingId },
+      include: { payment: true },
+    });
+
+    let confirmed = 0;
+    for (const b of childBookings) {
+      if (
+        b.payment &&
+        b.payment.method === PaymentMethod.CASH &&
+        b.payment.status === PaymentStatus.PROCESSING
+      ) {
+        await this.prisma.payment.update({
+          where: { id: b.payment.id },
+          data: { status: PaymentStatus.PAID, paidAt: new Date() },
+        });
+        confirmed++;
+      }
+    }
+
+    // After confirmation, re-evaluate the package booking progression.
+    await this.tryProgressPackageBooking(packageEventBookingId);
+
+    this.domainEventBus.packagePaymentConfirmed({
+      actorId: userId,
+      targetUserId: pb.package.provider.user.id,
+      entityId: packageEventBookingId,
+      packageId: pb.packageId,
+      packageName: pb.package.name,
+      packageEventBookingId,
+      amount: pb.totalAmount,
+    });
+
+    return {
+      message: 'Package cash payment confirmed',
+      data: { id: packageEventBookingId, confirmedPayments: confirmed },
+    };
+  }
+
+  /**
+   * `POST /api/v1/packages/bookings/:id/complete`
+   * Manual completion (per implementation_plan.md §7 Minimal-Safe Cut #3).
+   * Only valid once every child booking is IN_PROGRESS.
+   */
+  async completePackageBooking(userId: string, packageEventBookingId: string) {
+    const provider = await this.resolveProvider(userId);
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      providerId: provider.id,
+    });
+
+    if (pb.status !== 'IN_PROGRESS') {
+      throw new BadRequestException(
+        `Package booking cannot be completed while it is ${pb.status}`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'COMPLETED' },
+      });
+      await tx.booking.updateMany({
+        where: { packageEventBookingId, status: 'IN_PROGRESS' },
+        data: { status: 'COMPLETED', completedAt: new Date() },
+      });
+      // The parent event also completes
+      if (pb.eventId) {
+        await tx.event.update({
+          where: { id: pb.eventId },
+          data: { status: 'COMPLETED' },
+        });
+      }
+    });
+
+    return { message: 'Package booking completed', data: { id: packageEventBookingId, status: 'COMPLETED' } };
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // CUSTOMER — exclusive-package browsing + booking + payment
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * `GET /api/v1/packages/exclusive`
+   * Lists all ACTIVE packages from all providers. Public catalog.
+   */
+  async listExclusivePackages() {
+    const packages = await this.prisma.package.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        provider: {
+          select: {
+            id: true,
+            businessName: true,
+            user: {
+              select: {
+                fullName: true,
+                profileImage: true,
+                locationName: true,
+                latitude: true,
+                longitude: true,
+              },
+            },
+          },
+        },
+        services: {
+          include: { service: { include: { serviceType: { select: { name: true } } } } },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    return { message: 'Exclusive packages retrieved', data: packages };
+  }
+
+  /**
+   * `GET /api/v1/packages/exclusive/:id`
+   * Public detail of an ACTIVE package.
+   */
+  async getExclusivePackageDetails(packageId: string) {
+    const pkg = await this.prisma.package.findFirst({
+      where: { id: packageId, status: 'ACTIVE' },
+      include: {
+        provider: {
+          select: {
+            id: true,
+            businessName: true,
+            user: {
+              select: {
+                fullName: true,
+                profileImage: true,
+                locationName: true,
+                latitude: true,
+                longitude: true,
+                phoneNumber: true,
+              },
+            },
+          },
+        },
+        services: {
+          include: {
+            service: {
+              include: {
+                serviceType: { select: { name: true } },
+                files: { take: 1 },
+              },
+            },
+          },
+        },
+      },
+    });
+    if (!pkg) throw new NotFoundException('Package not found');
+    return { message: 'Exclusive package details retrieved', data: pkg };
+  }
+
+  /**
+   * `POST /api/v1/packages/exclusive/:id/book`
+   * Customer books an entire exclusive package:
+   *   1. Creates a new Event (DRAFT).
+   *   2. Creates a PackageEventBooking (PENDING).
+   *   3. Creates one PENDING child Booking per ACTIVE PackageService row,
+   *      each pre-priced at the service's `price` (HALL/SOUND) or sub-service
+   *      sum (others). Prices stored on `Booking.totalAmount` — payments are
+   *      resolved later through PaymentsService.
+   *
+   * The package's own `discountPercentage` and any PACKAGE-scope discount
+   * code are applied to `PackageEventBooking.totalAmount` (cached sum).
+   */
+  async bookPackage(customerId: string, packageId: string, dto: BookPackageDto) {
+    const pkg = await this.prisma.package.findFirst({
+      where: { id: packageId, status: 'ACTIVE' },
+      include: {
+        services: {
+          where: { status: 'ACTIVE' },
+          include: {
+            service: {
+              include: {
+                serviceType: { select: { name: true } },
+                subServices: { where: { isAvailable: true, approvalStatus: 'ACTIVE' } },
+              },
+            },
+          },
+        },
+        provider: { include: { user: true } },
+      },
+    });
+    if (!pkg) throw new NotFoundException('Package not found or not active');
+
+    if (dto.eventStartTime === dto.eventEndTime) {
+      throw new BadRequestException('eventEndTime must be different from eventStartTime');
+    }
+
+    // Resolve PACKAGE-scope discount (auto-applied unless a code is required).
+    const pkgDiscount = await this.discountsService.resolveActiveDiscountForPackage(
+      pkg.id,
+      dto.discountCode,
+    );
+
+    // Build every child Booking inside one transaction so that price
+    // computation is consistent and the package is rejected atomically if
+    // anything throws.
+    const result = await this.prisma.$transaction(
+      async (tx) => {
+        const event = await tx.event.create({
+          data: {
+            customerId,
+            name: dto.name,
+            eventType: dto.eventType,
+            eventDate: new Date(dto.eventDate),
+            eventStartTime: dto.eventStartTime,
+            eventEndTime: dto.eventEndTime,
+            eventLocation: dto.eventLocation,
+            numberOfGuests: dto.numberOfGuests,
+            customerNotes: dto.customerNotes,
+            status: 'DRAFT',
+          },
+        });
+
+        let totalAmount = 0;
+        const childBookings: Prisma.BookingCreateWithoutPackageEventBookingInput[] = [];
+
+        for (const ps of pkg.services) {
+          const svc = ps.service;
+          const isHallOrSound = ['HALL', 'SOUND'].includes(svc.serviceType.name);
+          const basePrice = isHallOrSound ? (svc.price ?? 0) : sumMinSubServicePrice(svc);
+          totalAmount += basePrice;
+
+          childBookings.push({
+            customer: { connect: { id: customerId } },
+            provider: { connect: { id: pkg.providerId } },
+            service: { connect: { id: svc.id } },
+            event: { connect: { id: event.id } },
+            totalAmount: basePrice,
+            status: 'PENDING',
+            cancellationDeadline: new Date(
+              Date.now() + PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000,
+            ),
+          });
+        }
+
+        const packageEventBooking = await tx.packageEventBooking.create({
+          data: {
+            packageId: pkg.id,
+            customerId,
+            eventId: event.id,
+            status: 'PENDING',
+            totalAmount: round2(totalAmount),
+            bookings: { create: childBookings },
+          },
+          include: {
+            bookings: true,
+            event: true,
+          },
+        });
+
+        return { event, packageEventBooking };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
+
+    // Apply package-level discount (either the package's own
+    // `discountPercentage` field or a PACKAGE-scope discount code) to the
+    // cached totalAmount on PackageEventBooking. Per-child booking prices
+    // remain authoritative — payments compute their own discount per booking.
+    await this.applyPackageTotalDiscount(result.packageEventBooking.id, pkgDiscount, pkg.discountPercentage);
+
+    this.domainEventBus.packageBookingRequested({
+      actorId: customerId,
+      targetUserId: pkg.provider.user.id,
+      entityId: result.packageEventBooking.id,
+      packageId: pkg.id,
+      packageName: pkg.name,
+      packageEventBookingId: result.packageEventBooking.id,
+      eventDate: result.event.eventDate,
+    });
+
+    return {
+      message: 'Package booking created (PENDING)',
+      data: {
+        packageEventBooking: result.packageEventBooking,
+        event: result.event,
+      },
+    };
+  }
+
+  /**
+   * `GET /api/v1/packages/bookings/:id` — customer view of their own
+   * PackageEventBooking.
+   */
+  async getPackageBookingForCustomer(userId: string, packageEventBookingId: string) {
+    return this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      customerId: userId,
+    });
+  }
+
+  /**
+   * `POST /api/v1/packages/bookings/:id/cancel` — customer cancel
+   */
+  async cancelPackageBooking(userId: string, packageEventBookingId: string, reason?: string) {
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      customerId: userId,
+    });
+
+    if (!['PENDING', 'CONFIRMED', 'PENDING_PAYMENT'].includes(pb.status)) {
+      throw new BadRequestException(
+        `Package booking cannot be cancelled while it is ${pb.status}`,
+      );
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'CANCELLED' },
+      });
+      await tx.booking.updateMany({
+        where: {
+          packageEventBookingId,
+          status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
+        },
+        data: {
+          status: 'CANCELLED',
+          cancelledAt: new Date(),
+          cancelledBy: 'CUSTOMER',
+          cancellationReason: reason ?? 'Package booking cancelled by customer',
+        },
+      });
+    });
+
+    return { message: 'Package booking cancelled', data: { id: packageEventBookingId, status: 'CANCELLED' } };
+  }
+
+  /**
+   * `POST /api/v1/packages/bookings/:id/pay`
+   * Customer confirms payment for an already-accepted package booking.
+   *
+   * For BANK_TRANSFER: every child booking's Payment is created and run
+   * through the gateway in parallel (mirrors PaymentsService flow).
+   *
+   * For CASH: every child booking's Payment is recorded as PENDING then
+   * immediately flipped to PROCESSING — the package owner later confirms
+   * via `confirmPackageCashPayment`.
+   *
+   * The PACKAGE-scope discount code (if supplied) is applied here at the
+   * cached totalAmount only; per-child booking prices remain unchanged
+   * because each child booking already had its own SERVICE-scope discount
+   * resolved at quote time (and we do not double-stack).
+   */
+  async payPackageBooking(
+    userId: string,
+    packageEventBookingId: string,
+    dto: PayPackageBookingDto,
+  ) {
+    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
+      customerId: userId,
+    });
+
+    if (pb.status !== 'CONFIRMED' && pb.status !== 'PENDING_PAYMENT') {
+      throw new BadRequestException(
+        `Package booking cannot be paid while it is ${pb.status}`,
+      );
+    }
+
+    // Move package booking into PENDING_PAYMENT while payments are processed
+    if (pb.status === 'CONFIRMED') {
+      await this.prisma.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'PENDING_PAYMENT' },
+      });
+    }
+
+    const childBookings = await this.prisma.booking.findMany({
+      where: { packageEventBookingId },
+      include: { payment: true },
+    });
+
+    const results: unknown[] = [];
+    for (const b of childBookings) {
+      if (b.payment) {
+        results.push({ bookingId: b.id, message: 'Payment already exists' });
+        continue;
+      }
+      const subtotal = b.totalAmount;
+      const payment = await this.prisma.payment.create({
+        data: {
+          bookingId: b.id,
+          payerId: userId,
+          amount: subtotal,
+          subtotalAmount: subtotal,
+          method: dto.method,
+          status:
+            dto.method === PaymentMethod.BANK_TRANSFER
+              ? PaymentStatus.PROCESSING
+              : PaymentStatus.PROCESSING,
+        },
+      });
+      results.push({ bookingId: b.id, paymentId: payment.id, status: payment.status });
+    }
+
+    if (dto.method === PaymentMethod.CASH) {
+      this.domainEventBus.packagePaymentCashChosen({
+        actorId: userId,
+        targetUserId: pb.package.provider.user.id,
+        entityId: packageEventBookingId,
+        packageId: pb.packageId,
+        packageName: pb.package.name,
+        packageEventBookingId,
+        amount: pb.totalAmount,
+      });
+    }
+
+    return {
+      message:
+        dto.method === PaymentMethod.BANK_TRANSFER
+          ? 'Bank transfer initiated for every child booking'
+          : 'Cash payment recorded for every child booking — awaiting provider confirmation',
+      data: results,
+    };
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Progression — called by PaymentsService.markPaid and the cron jobs.
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * Re-evaluates a PackageEventBooking's progression. If every child
+   * Booking is either paid (has a PAID Payment) or already terminal,
+   * promote the package booking and its parent Event to IN_PROGRESS.
+   * (docs/implementation_plan.md §6.3 / §5.)
+   */
+  async tryProgressPackageBooking(packageEventBookingId: string): Promise<void> {
+    const pb = await this.prisma.packageEventBooking.findUnique({
+      where: { id: packageEventBookingId },
+      include: {
+        bookings: { include: { payment: true } },
+        event: true,
+        package: { include: { provider: { include: { user: true } } } },
+      },
+    });
+    if (!pb) return;
+    if (pb.status !== 'CONFIRMED' && pb.status !== 'PENDING_PAYMENT') return;
+
+    const TERMINAL = ['COMPLETED', 'CANCELLED', 'REJECTED'];
+    const allSettled = pb.bookings.every((b) => {
+      if (TERMINAL.includes(b.status)) return true;
+      if (b.status === 'CONFIRMED') return b.payment?.status === 'PAID';
+      if (b.status === 'IN_PROGRESS') return true;
+      return false;
+    });
+    if (!allSettled) return;
+
+    const toAdvance = pb.bookings.filter(
+      (b) => b.status === 'CONFIRMED' && b.payment?.status === 'PAID',
+    );
+    if (toAdvance.length === 0) return;
 
     await this.prisma.$transaction(async (tx) => {
       await tx.booking.updateMany({
-        where: { packageBookingId },
+        where: { id: { in: toAdvance.map((b) => b.id) } },
         data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
       });
-      await tx.packageBooking.update({ where: { id: packageBookingId }, data: { status: 'CONFIRMED' } });
+      await tx.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { status: 'IN_PROGRESS' },
+      });
+      if (pb.eventId && pb.event && pb.event.status === 'DRAFT') {
+        await tx.event.update({
+          where: { id: pb.eventId },
+          data: { status: 'IN_PROGRESS' },
+        });
+      }
+    });
+
+    this.domainEventBus.packagePaymentConfirmed({
+      actorId: pb.customerId,
+      targetUserId: pb.package.provider.user.id,
+      entityId: packageEventBookingId,
+      packageId: pb.packageId,
+      packageName: pb.package.name,
+      packageEventBookingId,
+      amount: pb.totalAmount,
     });
   }
+
+  // ─── private helpers ────────────────────────────────────────────────
+
+  private async applyPackageTotalDiscount(
+    packageEventBookingId: string,
+    discount: Discount | null,
+    discountPercentage?: number | null,
+  ) {
+    const pb = await this.prisma.packageEventBooking.findUnique({
+      where: { id: packageEventBookingId },
+    });
+    if (!pb) return;
+
+    const base = pb.totalAmount;
+    let finalTotal = base;
+
+    // Package-authored discount percentage always applies (legacy field).
+    if (discountPercentage && discountPercentage > 0) {
+      finalTotal = applyPctOff(finalTotal, discountPercentage);
+    }
+    // PACKAGE-scope discount (admin or provider) stacks ON TOP of the
+    // package-authored discount when both exist (rare in practice).
+    if (discount) {
+      const pricing = this.discountsService.computePriceWithDiscount(finalTotal, discount);
+      finalTotal = pricing.finalPrice;
+    }
+
+    if (Math.abs(finalTotal - base) > 0.0001) {
+      await this.prisma.packageEventBooking.update({
+        where: { id: packageEventBookingId },
+        data: { totalAmount: round2(finalTotal) },
+      });
+    }
+  }
+}
+
+// ─── module-level helpers ────────────────────────────────────────────
+
+function sumMinSubServicePrice(service: { price: number | null; subServices: { pricePerUnit: number }[] }) {
+  if (service.subServices.length === 0) return service.price ?? 0;
+  // For package preview we use a placeholder of "1 unit of the cheapest
+  // sub-service". Real per-booking pricing is resolved when the provider
+  // sends a quote via the standard quote flow; package bookings skip that
+  // step, so we use this conservative default.
+  const cheapest = service.subServices.reduce(
+    (min, ss) => (ss.pricePerUnit < min ? ss.pricePerUnit : min),
+    service.subServices[0].pricePerUnit,
+  );
+  return cheapest;
+}
+
+function applyPctOff(price: number, pct: number) {
+  return Math.round(price * (1 - pct / 100) * 100) / 100;
+}
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
 }

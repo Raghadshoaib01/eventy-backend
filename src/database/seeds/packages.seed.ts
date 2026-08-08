@@ -1,27 +1,26 @@
 // src/database/seeds/packages.seed.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Seeds Packages with their items and PackageBookings, covering all scenarios:
+// Seeds Packages with their items and PackageEventBookings, covering all scenarios:
 //
-//  Package 1 – "Royal Wedding Package"  → ACTIVE, FLAT_SUM strategy
-//    • PackageBooking A → CONFIRMED   (Ahmad)
-//    • PackageBooking B → CANCELLED   (Dina)
+//  Package 1 – "Royal Wedding Package"  → ACTIVE
+//    • PackageEventBooking A → CONFIRMED   (Ahmad)
+//    • PackageEventBooking B → CANCELLED   (Dina)
 //
-//  Package 2 – "Graduation Bundle"      → ACTIVE, GUEST_BASED strategy
-//    • PackageBooking C → IN_PROGRESS  (Dina)
-//    • PackageBooking D → PENDING_PAYMENT (Ahmad)
+//  Package 2 – "Graduation Bundle"      → ACTIVE
+//    • PackageEventBooking C → IN_PROGRESS  (Dina)
+//    • PackageEventBooking D → PENDING_PAYMENT (Ahmad)
 //
-//  Package 3 – "Birthday Starter Pack"  → PENDING_APPROVAL (no bookings)
-//  Package 4 – "Engagement Elegance"    → REJECTED         (no bookings)
-//  Package 5 – "Draft Sound & Favors"   → DRAFT            (no bookings)
+//  Package 3 – "Birthday Starter Pack"  → DRAFT (no bookings)
+//  Package 4 – "Engagement Elegance"    → CANCELLED (no bookings)
 //
 // Idempotency: each record is looked up by name / customer + package before
 // being created.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import {
-  PackageBookingStatus,
-  PackagePricingStrategy,
+  PackageEventBookingStatus,
   PackageStatus,
+  PackageServiceStatus,
   PrismaClient,
 } from '@prisma/client';
 import { SeededCustomer } from './customers.seed';
@@ -99,7 +98,7 @@ export async function seedPackages(
   const decPetals  = await resolveService(prisma, mayaProv.id,   'DECORATION');
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PACKAGE 1: Royal Wedding Package — ACTIVE, FLAT_SUM
+  // PACKAGE 1: Royal Wedding Package — ACTIVE
   // ══════════════════════════════════════════════════════════════════════════
   let royalWeddingPackageId = '';
 
@@ -118,15 +117,13 @@ export async function seedPackages(
         description:
           'Complete wedding experience: premium hall, catering, decoration, and photography – all in one bundle.',
         status: PackageStatus.ACTIVE,
-        pricingStrategy: PackagePricingStrategy.FLAT_SUM,
-        reviewNote: 'Approved – meets all quality standards.',
-        reviewedAt: new Date('2026-06-01'),
-        attachedItems: {
+        discountPercentage: 10,
+        services: {
           create: [
-            { serviceId: hallSvc.id,    isRequired: true,  addedByUserId: khalidProv.userId },
-            { serviceId: foodNabaah.id, isRequired: true,  addedByUserId: khalidProv.userId },
-            { serviceId: decGrande.id,  isRequired: false, addedByUserId: khalidProv.userId },
-            { serviceId: photoLens.id,  isRequired: false, addedByUserId: khalidProv.userId },
+            { providerId: khalidProv.id, serviceId: hallSvc.id,    status: PackageServiceStatus.ACTIVE },
+            { providerId: anasProv.id,   serviceId: foodNabaah.id, status: PackageServiceStatus.ACTIVE },
+            { providerId: tarekProv.id,  serviceId: decGrande.id,  status: PackageServiceStatus.ACTIVE },
+            { providerId: linaProv.id,   serviceId: photoLens.id,  status: PackageServiceStatus.ACTIVE },
           ],
         },
       },
@@ -136,7 +133,7 @@ export async function seedPackages(
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PACKAGE 2: Graduation Bundle — ACTIVE, GUEST_BASED
+  // PACKAGE 2: Graduation Bundle — ACTIVE
   // ══════════════════════════════════════════════════════════════════════════
   let graduationBundleId = '';
 
@@ -155,15 +152,13 @@ export async function seedPackages(
         description:
           'Everything you need for an unforgettable graduation party: food, decoration, sound, and gifts.',
         status: PackageStatus.ACTIVE,
-        pricingStrategy: PackagePricingStrategy.GUEST_BASED,
-        reviewNote: 'Approved – graduation-focused bundle.',
-        reviewedAt: new Date('2026-06-15'),
-        attachedItems: {
+        discountPercentage: 15,
+        services: {
           create: [
-            { serviceId: foodHadidi.id, isRequired: true,  addedByUserId: saraProv.userId },
-            { serviceId: decPetals.id,  isRequired: true,  addedByUserId: saraProv.userId },
-            { serviceId: soundBeat.id,  isRequired: false, addedByUserId: saraProv.userId },
-            { serviceId: favorsGift.id, isRequired: false, addedByUserId: saraProv.userId },
+            { providerId: saraProv.id, serviceId: foodHadidi.id, status: PackageServiceStatus.ACTIVE },
+            { providerId: mayaProv.id, serviceId: decPetals.id,  status: PackageServiceStatus.ACTIVE },
+            { providerId: farisProv.id, serviceId: soundBeat.id, status: PackageServiceStatus.ACTIVE },
+            { providerId: nourProv.id, serviceId: favorsGift.id, status: PackageServiceStatus.ACTIVE },
           ],
         },
       },
@@ -173,7 +168,7 @@ export async function seedPackages(
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PACKAGE 3: Birthday Starter Pack — PENDING_APPROVAL
+  // PACKAGE 3: Birthday Starter Pack — DRAFT
   // ══════════════════════════════════════════════════════════════════════════
   const existingPkg3 = await prisma.package.findFirst({
     where: { providerId: anasProv.id, name: 'Birthday Starter Pack' },
@@ -186,23 +181,22 @@ export async function seedPackages(
         name: 'Birthday Starter Pack',
         description:
           'Compact birthday package: catering + photography for intimate celebrations up to 50 guests.',
-        status: PackageStatus.PENDING_APPROVAL,
-        pricingStrategy: PackagePricingStrategy.FLAT_SUM,
-        attachedItems: {
+        status: PackageStatus.DRAFT,
+        services: {
           create: [
-            { serviceId: foodNabaah.id, isRequired: true,  addedByUserId: anasProv.userId },
-            { serviceId: photoLens.id,  isRequired: false, addedByUserId: anasProv.userId },
+            { providerId: anasProv.id, serviceId: foodNabaah.id, status: PackageServiceStatus.ACTIVE },
+            { providerId: linaProv.id, serviceId: photoLens.id,  status: PackageServiceStatus.PENDING_PROVIDER_APPROVAL },
           ],
         },
       },
     });
-    console.log('  ✅ Package 3 created (PENDING_APPROVAL):', pkg3.name);
+    console.log('  ✅ Package 3 created (DRAFT):', pkg3.name);
   } else {
     console.log('  ⚠️  Package 3 exists, skipping:', existingPkg3.name);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // PACKAGE 4: Engagement Elegance — REJECTED
+  // PACKAGE 4: Engagement Elegance — CANCELLED
   // ══════════════════════════════════════════════════════════════════════════
   const existingPkg4 = await prisma.package.findFirst({
     where: { providerId: tarekProv.id, name: 'Engagement Elegance' },
@@ -214,51 +208,18 @@ export async function seedPackages(
         providerId: tarekProv.id,
         name: 'Engagement Elegance',
         description: 'Elegant engagement bundle: decoration + sound system.',
-        status: PackageStatus.REJECTED,
-        pricingStrategy: PackagePricingStrategy.FLAT_SUM,
-        reviewNote:
-          'Rejected – incomplete service details. Please update and resubmit.',
-        reviewedAt: new Date('2026-06-20'),
-        attachedItems: {
+        status: PackageStatus.CANCELLED,
+        services: {
           create: [
-            { serviceId: decGrande.id, isRequired: true,  addedByUserId: tarekProv.userId },
-            { serviceId: soundBeat.id, isRequired: false, addedByUserId: tarekProv.userId },
+            { providerId: tarekProv.id, serviceId: decGrande.id, status: PackageServiceStatus.ACTIVE },
+            { providerId: farisProv.id, serviceId: soundBeat.id, status: PackageServiceStatus.REJECTED },
           ],
         },
       },
     });
-    console.log('  ✅ Package 4 created (REJECTED):', pkg4.name);
+    console.log('  ✅ Package 4 created (CANCELLED):', pkg4.name);
   } else {
     console.log('  ⚠️  Package 4 exists, skipping:', existingPkg4.name);
-  }
-
-  // ══════════════════════════════════════════════════════════════════════════
-  // PACKAGE 5: Draft Sound & Favors Bundle — DRAFT
-  // ══════════════════════════════════════════════════════════════════════════
-  const existingPkg5 = await prisma.package.findFirst({
-    where: { providerId: farisProv.id, name: 'Draft Sound & Favors Bundle' },
-  });
-
-  if (!existingPkg5) {
-    const pkg5 = await prisma.package.create({
-      data: {
-        providerId: farisProv.id,
-        name: 'Draft Sound & Favors Bundle',
-        description:
-          'Work in progress: sound system + custom favors for any celebration.',
-        status: PackageStatus.DRAFT,
-        pricingStrategy: PackagePricingStrategy.FLAT_SUM,
-        attachedItems: {
-          create: [
-            { serviceId: soundBeat.id,  isRequired: true,  addedByUserId: farisProv.userId },
-            { serviceId: favorsGift.id, isRequired: false, addedByUserId: farisProv.userId },
-          ],
-        },
-      },
-    });
-    console.log('  ✅ Package 5 created (DRAFT):', pkg5.name);
-  } else {
-    console.log('  ⚠️  Package 5 exists, skipping:', existingPkg5.name);
   }
 
   // ══════════════════════════════════════════════════════════════════════════
@@ -275,140 +236,89 @@ export async function seedPackages(
 
   // ── Booking A: Ahmad → Royal Wedding Package (CONFIRMED) ─────────────────
   let confirmedPkgBookingId = '';
-  const existingPkgBookA = await prisma.packageBooking.findFirst({
+  const existingPkgBookA = await prisma.packageEventBooking.findFirst({
     where: { packageId: royalWeddingPackageId, customerId: ahmad.userId },
   });
 
   if (existingPkgBookA) {
     confirmedPkgBookingId = existingPkgBookA.id;
-    console.log('  ⚠️  PackageBooking A exists, skipping.');
+    console.log('  ⚠️  PackageEventBooking A exists, skipping.');
   } else {
-    const subtotalA   = 2500 + 1080 + 830;
-    const discAmtA    = Math.round(subtotalA * 0.1 * 100) / 100;
-    const pkgBookA = await prisma.packageBooking.create({
+    const pkgBookA = await prisma.packageEventBooking.create({
       data: {
         packageId:             royalWeddingPackageId,
         customerId:            ahmad.userId,
         eventId:               ahmadWeddingEvent?.id ?? undefined,
-        guestCount:            400,
-        status:                PackageBookingStatus.CONFIRMED,
-        hallPrice:             2500,
-        optionalServicesTotal: 830,
-        subtotal:              subtotalA,
-        discountAmount:        discAmtA,
-        totalAmount:           subtotalA - discAmtA,
-        selectedItems: {
-          create: [
-            { serviceId: hallSvc.id,    wasRequired: true,  priceAtBooking: 2500 },
-            { serviceId: foodNabaah.id, wasRequired: true,  priceAtBooking: 1080 },
-            { serviceId: decGrande.id,  wasRequired: false, priceAtBooking: 830  },
-          ],
-        },
+        status:                PackageEventBookingStatus.CONFIRMED,
+        totalAmount:           3910,
       },
     });
     confirmedPkgBookingId = pkgBookA.id;
-    console.log('  ✅ PackageBooking A (CONFIRMED):', pkgBookA.id);
+    console.log('  ✅ PackageEventBooking A (CONFIRMED):', pkgBookA.id);
   }
 
   // ── Booking B: Dina → Royal Wedding Package (CANCELLED) ──────────────────
   let cancelledPkgBookingId = '';
-  const existingPkgBookB = await prisma.packageBooking.findFirst({
+  const existingPkgBookB = await prisma.packageEventBooking.findFirst({
     where: { packageId: royalWeddingPackageId, customerId: dina.userId },
   });
 
   if (existingPkgBookB) {
     cancelledPkgBookingId = existingPkgBookB.id;
-    console.log('  ⚠️  PackageBooking B exists, skipping.');
+    console.log('  ⚠️  PackageEventBooking B exists, skipping.');
   } else {
-    const subtotalB = 2500 + 600;
-    const pkgBookB = await prisma.packageBooking.create({
+    const pkgBookB = await prisma.packageEventBooking.create({
       data: {
         packageId:             royalWeddingPackageId,
         customerId:            dina.userId,
-        guestCount:            120,
-        status:                PackageBookingStatus.CANCELLED,
-        hallPrice:             2500,
-        optionalServicesTotal: 0,
-        subtotal:              subtotalB,
-        totalAmount:           subtotalB,
-        cancelledAt:           new Date('2026-07-10'),
-        cancellationReason:    'Customer changed venue preference.',
-        selectedItems: {
-          create: [
-            { serviceId: hallSvc.id,    wasRequired: true, priceAtBooking: 2500 },
-            { serviceId: foodNabaah.id, wasRequired: true, priceAtBooking: 600  },
-          ],
-        },
+        status:                PackageEventBookingStatus.CANCELLED,
+        totalAmount:           3100,
       },
     });
     cancelledPkgBookingId = pkgBookB.id;
-    console.log('  ✅ PackageBooking B (CANCELLED):', pkgBookB.id);
+    console.log('  ✅ PackageEventBooking B (CANCELLED):', pkgBookB.id);
   }
 
   // ── Booking C: Dina → Graduation Bundle (IN_PROGRESS) ────────────────────
   let inProgressPkgBookingId = '';
-  const existingPkgBookC = await prisma.packageBooking.findFirst({
+  const existingPkgBookC = await prisma.packageEventBooking.findFirst({
     where: { packageId: graduationBundleId, customerId: dina.userId },
   });
 
   if (existingPkgBookC) {
     inProgressPkgBookingId = existingPkgBookC.id;
-    console.log('  ⚠️  PackageBooking C exists, skipping.');
+    console.log('  ⚠️  PackageEventBooking C exists, skipping.');
   } else {
-    const subtotalC = 3600 + 425 + 450 + 360;
-    const pkgBookC = await prisma.packageBooking.create({
+    const pkgBookC = await prisma.packageEventBooking.create({
       data: {
         packageId:             graduationBundleId,
         customerId:            dina.userId,
         eventId:               dinaGradEvent?.id ?? undefined,
-        guestCount:            80,
-        status:                PackageBookingStatus.IN_PROGRESS,
-        hallPrice:             0,
-        optionalServicesTotal: 450 + 360,
-        subtotal:              subtotalC,
-        totalAmount:           subtotalC,
-        selectedItems: {
-          create: [
-            { serviceId: foodHadidi.id, wasRequired: true,  priceAtBooking: 3600 },
-            { serviceId: decPetals.id,  wasRequired: true,  priceAtBooking: 425  },
-            { serviceId: soundBeat.id,  wasRequired: false, priceAtBooking: 450  },
-            { serviceId: favorsGift.id, wasRequired: false, priceAtBooking: 360  },
-          ],
-        },
+        status:                PackageEventBookingStatus.IN_PROGRESS,
+        totalAmount:           4835,
       },
     });
     inProgressPkgBookingId = pkgBookC.id;
-    console.log('  ✅ PackageBooking C (IN_PROGRESS):', pkgBookC.id);
+    console.log('  ✅ PackageEventBooking C (IN_PROGRESS):', pkgBookC.id);
   }
 
   // ── Booking D: Ahmad → Graduation Bundle (PENDING_PAYMENT) ───────────────
-  const existingPkgBookD = await prisma.packageBooking.findFirst({
+  const existingPkgBookD = await prisma.packageEventBooking.findFirst({
     where: { packageId: graduationBundleId, customerId: ahmad.userId },
   });
 
   if (!existingPkgBookD) {
-    const subtotalD = 1440 + 425;
-    const pkgBookD = await prisma.packageBooking.create({
+    const pkgBookD = await prisma.packageEventBooking.create({
       data: {
         packageId:             graduationBundleId,
         customerId:            ahmad.userId,
-        guestCount:            40,
-        status:                PackageBookingStatus.PENDING_PAYMENT,
-        hallPrice:             0,
-        optionalServicesTotal: 0,
-        subtotal:              subtotalD,
-        totalAmount:           subtotalD,
-        selectedItems: {
-          create: [
-            { serviceId: foodHadidi.id, wasRequired: true, priceAtBooking: 1440 },
-            { serviceId: decPetals.id,  wasRequired: true, priceAtBooking: 425  },
-          ],
-        },
+        status:                PackageEventBookingStatus.PENDING_PAYMENT,
+        totalAmount:           1865,
       },
     });
-    console.log('  ✅ PackageBooking D (PENDING_PAYMENT):', pkgBookD.id);
+    console.log('  ✅ PackageEventBooking D (PENDING_PAYMENT):', pkgBookD.id);
   } else {
-    console.log('  ⚠️  PackageBooking D exists, skipping.');
+    console.log('  ⚠️  PackageEventBooking D exists, skipping.');
   }
 
   console.log('\n✅ All packages and package bookings seeded.');

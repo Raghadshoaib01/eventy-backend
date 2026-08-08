@@ -19,10 +19,17 @@ import {
   ProviderRegisteredPayload,
   ServiceApprovedPayload,
   ServiceRejectedPayload,
-  PackageApprovedPayload,
-  PackageRejectedPayload,
-  PackageServiceRemovedPayload,
-  PackageChangeAppliedPayload,
+  PackageJoinRequestedPayload,
+  PackageActivatedPayload,
+  PackageJoinAcceptedPayload,
+  PackageJoinRejectedPayload,
+  PackagePartnerLeftPayload,
+  PackageBookingRequestedPayload,
+  PackageBookingAcceptedPayload,
+  PackageBookingRejectedPayload,
+  PackagePaymentCashChosenPayload,
+  PackagePaymentConfirmedPayload,
+  PackageBookingPaymentExpiredPayload,
   DiscountCancelledPayload,
   ReviewRepliedPayload,
   ComplaintStatusChangedPayload,
@@ -358,83 +365,225 @@ export class NotificationsListener {
     });
   }
 
+
+
   // ─────────────────────────────────────────────────────────────
-  // PACKAGE EVENTS (docs/packages-implementation-plan.md §5.4, §13.7)
+  // PACKAGE EVENTS (docs/implementation_plan.md §4)
   // ─────────────────────────────────────────────────────────────
 
-  @OnEvent(DomainEvents.PACKAGE_APPROVED, { async: true })
-  async handlePackageApproved(payload: PackageApprovedPayload): Promise<void> {
+  @OnEvent(DomainEvents.PACKAGE_JOIN_REQUESTED, { async: true })
+  async handlePackageJoinRequested(payload: PackageJoinRequestedPayload): Promise<void> {
+    const servicePart = payload.serviceName ? ` for "${payload.serviceName}"` : '';
     await this.deliver({
       userId: payload.targetUserId,
-      type: NotificationType.PACKAGE_APPROVED,
-      title: 'Package Approved ✅',
-      body: payload.adminMessage
-        ? `Your package "${payload.packageName}" has been approved and is now live! Note: ${payload.adminMessage}`
-        : `Your package "${payload.packageName}" has been approved and is now live!`,
+      type: NotificationType.PACKAGE_JOIN_REQUESTED,
+      title: 'Package Join Request 📦',
+      body: `${payload.ownerProviderName} invited your service${servicePart} to join "${payload.packageName}".`,
       metadata: {
-        screen: 'package-details',
+        screen: 'package-join-request',
         packageId: payload.packageId,
         providerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
-        approvalStatus: 'APPROVED',
-        adminMessage: payload.adminMessage,
-      },
-    });
-  }
-
-  @OnEvent(DomainEvents.PACKAGE_REJECTED, { async: true })
-  async handlePackageRejected(payload: PackageRejectedPayload): Promise<void> {
-    await this.deliver({
-      userId: payload.targetUserId,
-      type: NotificationType.PACKAGE_REJECTED,
-      title: 'Package Rejected',
-      body: payload.adminMessage
-        ? `Your package "${payload.packageName}" was rejected. Reason: ${payload.adminMessage}`
-        : `Your package "${payload.packageName}" was rejected. Please review and resubmit.`,
-      metadata: {
-        screen: 'package-details',
-        packageId: payload.packageId,
-        providerUserId: payload.targetUserId,
-        actorUserId: payload.actorId,
-        approvalStatus: 'REJECTED',
-        rejectionReason: payload.adminMessage,
-        adminMessage: payload.adminMessage,
-      },
-    });
-  }
-
-  @OnEvent(DomainEvents.PACKAGE_SERVICE_REMOVED, { async: true })
-  async handlePackageServiceRemoved(payload: PackageServiceRemovedPayload): Promise<void> {
-    await this.deliver({
-      userId: payload.targetUserId,
-      type: NotificationType.PACKAGE_SERVICE_REMOVED,
-      title: 'Service Removed From Package',
-      body: payload.packageDeactivated
-        ? `"${payload.serviceName}" was removed from your package "${payload.packageName}", which no longer meets the minimum requirements and has been deactivated.`
-        : `"${payload.serviceName}" was removed from your package "${payload.packageName}".`,
-      metadata: {
-        screen: 'package-details',
-        packageId: payload.packageId,
-        providerUserId: payload.targetUserId,
-        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        ownerProviderName: payload.ownerProviderName,
         serviceName: payload.serviceName,
-        packageDeactivated: payload.packageDeactivated,
       },
     });
   }
 
-  @OnEvent(DomainEvents.PACKAGE_CHANGE_APPLIED, { async: true })
-  async handlePackageChangeApplied(payload: PackageChangeAppliedPayload): Promise<void> {
+  @OnEvent(DomainEvents.PACKAGE_ACTIVATED, { async: true })
+  async handlePackageActivated(payload: PackageActivatedPayload): Promise<void> {
     await this.deliver({
       userId: payload.targetUserId,
-      type: NotificationType.PACKAGE_CHANGE_APPLIED,
-      title: 'Scheduled Package Update Applied',
-      body: `Your scheduled change to "${payload.packageName}" has been applied now that its bookings are complete.`,
+      type: NotificationType.PACKAGE_ACTIVATED,
+      title: 'Package Activated ✅',
+      body: `"${payload.packageName}" by ${payload.ownerProviderName} is now active.`,
       metadata: {
         screen: 'package-details',
         packageId: payload.packageId,
         providerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        ownerProviderName: payload.ownerProviderName,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_JOIN_ACCEPTED, { async: true })
+  async handlePackageJoinAccepted(payload: PackageJoinAcceptedPayload): Promise<void> {
+    const servicePart = payload.serviceName ? ` (${payload.serviceName})` : '';
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_JOIN_ACCEPTED,
+      title: 'Join Request Accepted ✅',
+      body: `${payload.partnerProviderName}${servicePart} accepted your invitation to join "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        partnerProviderName: payload.partnerProviderName,
+        serviceName: payload.serviceName,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_JOIN_REJECTED, { async: true })
+  async handlePackageJoinRejected(payload: PackageJoinRejectedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_JOIN_REJECTED,
+      title: 'Join Request Rejected',
+      body: payload.rejectionReason
+        ? `${payload.partnerProviderName} rejected your invitation to join "${payload.packageName}". Reason: ${payload.rejectionReason}`
+        : `${payload.partnerProviderName} rejected your invitation to join "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        partnerProviderName: payload.partnerProviderName,
+        rejectionReason: payload.rejectionReason,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_PARTNER_LEFT, { async: true })
+  async handlePackagePartnerLeft(payload: PackagePartnerLeftPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_PARTNER_LEFT,
+      title: 'Partner Left Package',
+      body: `${payload.partnerProviderName} left your package "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-details',
+        packageId: payload.packageId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        partnerProviderName: payload.partnerProviderName,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_BOOKING_REQUESTED, { async: true })
+  async handlePackageBookingRequested(payload: PackageBookingRequestedPayload): Promise<void> {
+    const customerPart = payload.customerName ? `${payload.customerName} requested` : 'A customer requested';
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_BOOKING_REQUESTED,
+      title: 'New Package Booking Request 📋',
+      body: `${customerPart} to book "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-booking-details',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        customerName: payload.customerName,
+        eventDate: payload.eventDate?.toISOString(),
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_BOOKING_ACCEPTED, { async: true })
+  async handlePackageBookingAccepted(payload: PackageBookingAcceptedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_BOOKING_ACCEPTED,
+      title: 'Package Booking Accepted 🎉',
+      body: `Your booking for "${payload.packageName}" has been accepted.`,
+      metadata: {
+        screen: 'package-booking-details',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        customerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_BOOKING_REJECTED, { async: true })
+  async handlePackageBookingRejected(payload: PackageBookingRejectedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_BOOKING_REJECTED,
+      title: 'Package Booking Rejected',
+      body: payload.rejectionReason
+        ? `Your booking for "${payload.packageName}" was rejected. Reason: ${payload.rejectionReason}`
+        : `Your booking for "${payload.packageName}" was rejected.`,
+      metadata: {
+        screen: 'package-booking-details',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        customerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        rejectionReason: payload.rejectionReason,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_PAYMENT_CASH_CHOSEN, { async: true })
+  async handlePackagePaymentCashChosen(payload: PackagePaymentCashChosenPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_PAYMENT_CASH_CHOSEN,
+      title: 'Cash Payment Selected 💵',
+      body: payload.amount != null
+        ? `The customer chose cash payment (${payload.amount}) for "${payload.packageName}".`
+        : `The customer chose cash payment for "${payload.packageName}".`,
+      metadata: {
+        screen: 'package-booking-payment',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        amount: payload.amount,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_PAYMENT_CONFIRMED, { async: true })
+  async handlePackagePaymentConfirmed(payload: PackagePaymentConfirmedPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_PAYMENT_CONFIRMED,
+      title: 'Package Payment Confirmed 💳',
+      body: payload.amount != null
+        ? `Payment of ${payload.amount} for "${payload.packageName}" has been confirmed.`
+        : `Payment for "${payload.packageName}" has been confirmed.`,
+      metadata: {
+        screen: 'package-booking-payment',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        providerUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
+        amount: payload.amount,
+      },
+    });
+  }
+
+  @OnEvent(DomainEvents.PACKAGE_BOOKING_PAYMENT_EXPIRED, { async: true })
+  async handlePackageBookingPaymentExpired(payload: PackageBookingPaymentExpiredPayload): Promise<void> {
+    await this.deliver({
+      userId: payload.targetUserId,
+      type: NotificationType.PACKAGE_BOOKING_PAYMENT_EXPIRED,
+      title: 'Payment Window Expired',
+      body: `The payment window for "${payload.packageName}" has expired and the booking was cancelled.`,
+      metadata: {
+        screen: 'package-booking-details',
+        packageId: payload.packageId,
+        packageEventBookingId: payload.packageEventBookingId,
+        targetUserId: payload.targetUserId,
+        actorUserId: payload.actorId,
+        packageName: payload.packageName,
       },
     });
   }

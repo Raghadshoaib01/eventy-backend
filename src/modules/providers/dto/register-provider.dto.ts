@@ -10,6 +10,7 @@ import {
   IsNumber,
   IsArray,
   IsEnum,
+  IsBoolean,
 } from 'class-validator';
 
 enum EventType {
@@ -148,6 +149,12 @@ export class RegisterProviderDto {
   @IsOptional()
   @Type(() => Number)
   price?: number;
+
+  @ApiProperty({ example: false, required: false, description: 'True if HALL is packaged' })
+  @IsBoolean()
+  @IsOptional()
+  @Type(() => Boolean)
+  isPackaged?: boolean;
 
   @ApiProperty({
     type: 'string',

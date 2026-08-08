@@ -21,10 +21,17 @@ import {
   PaymentFailedPayload,
   BookingQuoteSentPayload,
   EventCancelledPayload,
-  PackageApprovedPayload,
-  PackageRejectedPayload,
-  PackageServiceRemovedPayload,
-  PackageChangeAppliedPayload,
+  PackageJoinRequestedPayload,
+  PackageActivatedPayload,
+  PackageJoinAcceptedPayload,
+  PackageJoinRejectedPayload,
+  PackagePartnerLeftPayload,
+  PackageBookingRequestedPayload,
+  PackageBookingAcceptedPayload,
+  PackageBookingRejectedPayload,
+  PackagePaymentCashChosenPayload,
+  PackagePaymentConfirmedPayload,
+  PackageBookingPaymentExpiredPayload,
   DiscountCancelledPayload,
   ReviewRepliedPayload,
   ComplaintStatusChangedPayload,
@@ -124,22 +131,50 @@ export class DomainEventBus {
     this.emitter.emit(DomainEvents.PAYMENT_FAILED, payload);
   }
 
-  // ── Package ───────────────────────────────────────────────
+  // ── Package (docs/implementation_plan.md §4) ──────────────
 
-  packageApproved(payload: PackageApprovedPayload): void {
-    this.emitter.emit(DomainEvents.PACKAGE_APPROVED, payload);
+  packageJoinRequested(payload: PackageJoinRequestedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_JOIN_REQUESTED, payload);
   }
 
-  packageRejected(payload: PackageRejectedPayload): void {
-    this.emitter.emit(DomainEvents.PACKAGE_REJECTED, payload);
+  packageActivated(payload: PackageActivatedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_ACTIVATED, payload);
   }
 
-  packageServiceRemoved(payload: PackageServiceRemovedPayload): void {
-    this.emitter.emit(DomainEvents.PACKAGE_SERVICE_REMOVED, payload);
+  packageJoinAccepted(payload: PackageJoinAcceptedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_JOIN_ACCEPTED, payload);
   }
 
-  packageChangeApplied(payload: PackageChangeAppliedPayload): void {
-    this.emitter.emit(DomainEvents.PACKAGE_CHANGE_APPLIED, payload);
+  packageJoinRejected(payload: PackageJoinRejectedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_JOIN_REJECTED, payload);
+  }
+
+  packagePartnerLeft(payload: PackagePartnerLeftPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_PARTNER_LEFT, payload);
+  }
+
+  packageBookingRequested(payload: PackageBookingRequestedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_BOOKING_REQUESTED, payload);
+  }
+
+  packageBookingAccepted(payload: PackageBookingAcceptedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_BOOKING_ACCEPTED, payload);
+  }
+
+  packageBookingRejected(payload: PackageBookingRejectedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_BOOKING_REJECTED, payload);
+  }
+
+  packagePaymentCashChosen(payload: PackagePaymentCashChosenPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_PAYMENT_CASH_CHOSEN, payload);
+  }
+
+  packagePaymentConfirmed(payload: PackagePaymentConfirmedPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_PAYMENT_CONFIRMED, payload);
+  }
+
+  packageBookingPaymentExpired(payload: PackageBookingPaymentExpiredPayload): void {
+    this.emitter.emit(DomainEvents.PACKAGE_BOOKING_PAYMENT_EXPIRED, payload);
   }
 
   // ── Discount ──────────────────────────────────────────────

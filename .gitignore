@@ -65,5 +65,6 @@ firebase/*.json
 *service-account*.json
 *firebase-adminsdk*.json
 
-# .md files 
+# .md files & .txt files
 *.md
+*.txt

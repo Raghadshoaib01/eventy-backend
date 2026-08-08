@@ -53,11 +53,18 @@ enum NotificationType {
   EVENT_CANCELLED
   GENERAL
 
-  // Packages (docs/packages-implementation-plan.md §13.7)
-  PACKAGE_APPROVED
-  PACKAGE_REJECTED
-  PACKAGE_CHANGE_APPLIED
-  PACKAGE_SERVICE_REMOVED
+  // Packages
+  PACKAGE_JOIN_REQUESTED
+  PACKAGE_ACTIVATED
+  PACKAGE_JOIN_ACCEPTED
+  PACKAGE_JOIN_REJECTED
+  PACKAGE_PARTNER_LEFT
+  PACKAGE_BOOKING_REQUESTED
+  PACKAGE_BOOKING_ACCEPTED
+  PACKAGE_BOOKING_REJECTED
+  PACKAGE_PAYMENT_CASH_CHOSEN
+  PACKAGE_PAYMENT_CONFIRMED
+  PACKAGE_BOOKING_PAYMENT_EXPIRED
 
   // Discounts (docs/discounts-implementation-plan.md §7)
   DISCOUNT_CANCELLED
@@ -184,34 +191,35 @@ enum ChangeRequestType {
 // =======================
 enum PackageStatus {
   DRAFT
-  PENDING_APPROVAL
   ACTIVE
-  REJECTED
-  INACTIVE
+  CANCELLED
 }
 
-enum PackagePricingStrategy {
-  FLAT_SUM
-  GUEST_BASED
+enum PackageServiceStatus {
+  PENDING_PROVIDER_APPROVAL
+  ACTIVE
+  REJECTED
+}
+
+enum PackageEventBookingStatus {
+  PENDING
+  CONFIRMED
+  PENDING_PAYMENT
+  IN_PROGRESS
+  COMPLETED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum SuggestedPackageStatus {
+  ACTIVE
+  INACTIVE
 }
 
 enum ServicePriceType {
   FLAT
   PER_GUEST
-}
-
-enum PackageChangeStatus {
-  PENDING
-  APPLIED
-  CANCELLED
-}
-
-enum PackageBookingStatus {
-  PENDING_PAYMENT
-  CONFIRMED
-  IN_PROGRESS
-  COMPLETED
-  CANCELLED
 }
 
 // =======================
@@ -338,8 +346,8 @@ model User {
 
   favorites       Favorite[]
   reviews         Review[]
-  payments        Payment[]
-  packageBookings PackageBooking[]
+  payments             Payment[]
+  packageEventBookings PackageEventBooking[]
   complaints      Complaint[]
 }
 
@@ -362,6 +370,7 @@ model ServiceProvider {
   bookings        Booking[]
   blockedSlots    BlockedSlot[]
   packages        Package[]
+  packageServices PackageService[]
 }
 
 // =======================
@@ -395,9 +404,7 @@ model Service {
   price       Float?
   priceType   ServicePriceType @default(FLAT)
 
-  // package-exclusive: set only when isPackaged = true (see docs/packages-implementation-plan.md §2.2)
-  packageId String?
-  package   Package? @relation("PackageExclusiveServices", fields: [packageId], references: [id], onDelete: Cascade)
+
 
   files        ServiceDetailFile[]
   eventTypes   ServiceEventType[]
@@ -406,7 +413,8 @@ model Service {
   workingDays  ServiceWorkingDay[]
   bookings     Booking[]
   blockedSlots BlockedSlot[]
-  packageItems PackageItem[]
+  packageServices   PackageService[]
+  suggestedPackages SuggestedPackage[]
   discounts    Discount[]
   reviews      Review[]
 
@@ -553,9 +561,9 @@ model Booking {
   eventId String?
   event   Event?  @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
-  // set when this booking was created as part of a package purchase (see docs/packages-implementation-plan.md §12.2)
-  packageBookingId String?
-  packageBooking   PackageBooking? @relation(fields: [packageBookingId], references: [id], onDelete: SetNull)
+  // set when this booking was created as part of a package purchase
+  packageEventBookingId String?
+  packageEventBooking   PackageEventBooking? @relation(fields: [packageEventBookingId], references: [id], onDelete: SetNull)
 
   customerNotes   String?
   providerNotes   String?
@@ -591,7 +599,7 @@ model Booking {
   @@index([serviceId])
   @@index([providerId])
   @@index([eventId])
-  @@index([packageBookingId])
+  @@index([packageEventBookingId])
 }
 
 model BookingItem {
@@ -699,7 +707,7 @@ model Event {
   status          EventStatus      @default(DRAFT)
   archivedAt      DateTime?
   bookings        Booking[]
-  packageBookings PackageBooking[]
+  packageEventBookings PackageEventBooking[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -751,93 +759,73 @@ model BlockedSlot {
 // docs/packages-implementation-plan.md
 // =======================
 model Package {
-  id              String                 @id @default(uuid())
-  providerId      String
-  provider        ServiceProvider        @relation(fields: [providerId], references: [id], onDelete: Cascade)
-  name            String
-  description     String?
-  status          PackageStatus          @default(DRAFT)
-  pricingStrategy PackagePricingStrategy @default(FLAT_SUM)
-  reviewNote      String?
-  reviewedById    String?
-  reviewedAt      DateTime?
-  createdAt       DateTime               @default(now())
-  updatedAt       DateTime               @updatedAt
+  id                 String           @id @default(uuid())
+  providerId         String
+  provider           ServiceProvider  @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  name               String
+  description        String?
+  discountPercentage Float?           @default(0)
+  status             PackageStatus    @default(DRAFT)
 
-  exclusiveServices Service[]             @relation("PackageExclusiveServices")
-  attachedItems     PackageItem[]
-  pendingChange     PackageChangeRequest?
-  packageBookings   PackageBooking[]
-  discounts         Discount[]
+  services      PackageService[]
+  eventBookings PackageEventBooking[]
+  discounts     Discount[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([providerId])
   @@index([status])
 }
 
-model PackageItem {
-  id            String   @id @default(uuid())
-  packageId     String
-  package       Package  @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  serviceId     String
-  service       Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  isRequired    Boolean  @default(true)
-  addedByUserId String
-  createdAt     DateTime @default(now())
+model PackageService {
+  id         String               @id @default(uuid())
+  packageId  String
+  package    Package              @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  providerId String
+  provider   ServiceProvider      @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  serviceId  String
+  service    Service              @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  status     PackageServiceStatus @default(PENDING_PROVIDER_APPROVAL)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([packageId, serviceId])
-  @@index([serviceId])
 }
 
-model PackageChangeRequest {
-  id                String              @id @default(uuid())
-  packageId         String              @unique
-  package           Package             @relation(fields: [packageId], references: [id], onDelete: Cascade)
-  payload           Json
-  status            PackageChangeStatus @default(PENDING)
-  requestedByUserId String
-  createdAt         DateTime            @default(now())
-  appliedAt         DateTime?
-}
+model PackageEventBooking {
+  id         String                    @id @default(uuid())
+  packageId  String
+  package    Package                   @relation(fields: [packageId], references: [id])
+  customerId String
+  customer   User                      @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  eventId    String?
+  event      Event?                    @relation(fields: [eventId], references: [id], onDelete: SetNull)
+  status     PackageEventBookingStatus @default(PENDING)
+  totalAmount Float                    @default(0)
 
-model PackageBooking {
-  id                    String               @id @default(uuid())
-  packageId             String
-  package               Package              @relation(fields: [packageId], references: [id])
-  customerId            String
-  customer              User                 @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  eventId               String?
-  event                 Event?               @relation(fields: [eventId], references: [id], onDelete: SetNull)
-  guestCount            Int
-  status                PackageBookingStatus @default(PENDING_PAYMENT)
-  hallPrice             Float
-  optionalServicesTotal Float
-  subtotal              Float
-  discountId            String?
-  discountAmount        Float?
-  totalAmount           Float
-  cancelledAt           DateTime?
-  cancellationReason    String?
-  createdAt             DateTime             @default(now())
-  updatedAt             DateTime             @updatedAt
+  bookings Booking[]
+  payment  Payment?
 
-  selectedItems PackageBookingItem[]
-  bookings      Booking[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([packageId])
   @@index([customerId])
   @@index([status])
 }
 
-model PackageBookingItem {
-  id               String         @id @default(uuid())
-  packageBookingId String
-  packageBooking   PackageBooking @relation(fields: [packageBookingId], references: [id], onDelete: Cascade)
-  serviceId        String
-  wasRequired      Boolean
-  priceAtBooking   Float
-  createdAt        DateTime       @default(now())
+model SuggestedPackage {
+  id          String                 @id @default(uuid())
+  name        String
+  description String?
+  status      SuggestedPackageStatus @default(ACTIVE)
 
-  @@index([packageBookingId])
+  services Service[] // Implicit m-n relation
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 // =======================
@@ -917,7 +905,7 @@ model Complaint {
   targetType       ComplaintTargetType
   targetId         String?
   bookingId        String?
-  packageBookingId String?
+  packageEventBookingId String?
   subject          String
   description      String
   status           ComplaintStatus     @default(PENDING)
@@ -937,8 +925,10 @@ model Complaint {
 // =======================
 model Payment {
   id                String        @id @default(uuid())
-  bookingId         String        @unique
-  booking           Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId             String?              @unique
+  booking               Booking?             @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  packageEventBookingId String?              @unique
+  packageEventBooking   PackageEventBooking? @relation(fields: [packageEventBookingId], references: [id], onDelete: Cascade)
   payerId           String
   payer             User          @relation(fields: [payerId], references: [id], onDelete: Cascade)
   amount            Float

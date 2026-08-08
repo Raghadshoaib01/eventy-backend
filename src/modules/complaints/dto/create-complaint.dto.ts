@@ -20,7 +20,7 @@ export class CreateComplaintDto {
   @ApiPropertyOptional({ example: 'uuid-of-a-package-booking-for-context' })
   @IsOptional()
   @IsUUID()
-  packageBookingId?: string;
+  packageEventBookingId?: string;
 
   @ApiProperty({ example: 'Provider arrived late' })
   @IsNotEmpty()

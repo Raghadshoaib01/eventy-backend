@@ -1,16 +1,15 @@
+// src/modules/packages/packages.module.ts
 import { Module } from '@nestjs/common';
-import { PackagesController } from './controllers/packages.controller';
-import { PublicPackagesController } from './controllers/public-packages.controller';
+import { PackagesController } from './packages.controller';
 import { PackagesService } from './packages.service';
-import { ServicesModule } from '../services/services.module';
+import { PackagesCronService } from './packages-cron.service';
 import { DiscountsModule } from '../discounts/discounts.module';
-import { DeliveryModule } from '../delivery/delivery.module';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 @Module({
-  imports: [ServicesModule, DiscountsModule, DeliveryModule],
-  controllers: [PackagesController, PublicPackagesController],
-  providers: [PackagesService, DomainEventBus],
+  imports: [DiscountsModule],
+  controllers: [PackagesController],
+  providers: [PackagesService, PackagesCronService, DomainEventBus],
   exports: [PackagesService],
 })
 export class PackagesModule {}

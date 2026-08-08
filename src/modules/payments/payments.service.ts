@@ -3,9 +3,9 @@ import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { BookingsService } from '../bookings/bookings.service';
 import { PackagesService } from '../packages/packages.service';
+
 import { DiscountsService } from '../discounts/discounts.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
-import { PayPackageBookingDto } from './dto/pay-package-booking.dto';
 import { RefundPaymentDto } from './dto/refund-payment.dto';
 import { PaymentGatewayService } from './gateways/payment-gateway.service';
 import { PaymentMethod, PaymentStatus, Payment, Booking } from '@prisma/client';
@@ -14,8 +14,9 @@ import { PaymentMethod, PaymentStatus, Payment, Booking } from '@prisma/client';
  * PaymentsService (docs/payments-implementation-plan.md)
  *
  * One Payment per Booking, always — including a package purchase's child
- * bookings (§4, §11 of packages-implementation-plan.md). There is
- * deliberately no separate "package payment" object.
+ * bookings. There is deliberately no separate "package payment" object;
+ * the package's totalAmount on PackageEventBooking is a cached sum, not a
+ * billing target (docs/implementation_plan.md §6.3).
  */
 @Injectable()
 export class PaymentsService {
@@ -51,7 +52,7 @@ export class PaymentsService {
    * since a package purchase is just several of these created together
    * (docs/packages-implementation-plan.md §12.4), not a different mechanism.
    *
-   * A package-sourced booking (`packageBookingId` set) never resolves a
+   * A package-sourced booking (`packageEventBookingId` set) never resolves a
    * SERVICE-scope discount here — its price was already finalized, net of
    * the package's own discount, at booking time (no stacking, docs
    * /discounts-implementation-plan.md §4/§5).
@@ -70,7 +71,7 @@ export class PaymentsService {
     let discountAmount: number | undefined;
     let amount = subtotalAmount;
 
-    if (!booking.packageBookingId) {
+    if (!booking.packageEventBookingId) {
       const discount = await this.discountsService.resolveActiveDiscountForService(booking.serviceId, discountCode);
       const pricing = this.discountsService.computePriceWithDiscount(subtotalAmount, discount);
       if (discount) {
@@ -99,32 +100,6 @@ export class PaymentsService {
     }
 
     return this.processElectronicPayment(payment);
-  }
-
-  /**
-   * POST /packages/:packageBookingId/payments (docs §12.4) — one customer
-   * action creates and processes one Payment per child Booking under the
-   * PackageBooking, in one batch. Never one aggregated payment.
-   */
-  async payForPackageBooking(userId: string, packageBookingId: string, dto: PayPackageBookingDto) {
-    const pb = await this.prisma.packageBooking.findUnique({
-      where: { id: packageBookingId },
-      include: { bookings: true },
-    });
-    if (!pb) throw new NotFoundException('Package booking not found');
-    if (pb.customerId !== userId) throw new ForbiddenException('Access denied');
-    if (pb.status !== 'PENDING_PAYMENT') {
-      throw new BadRequestException(`Package booking cannot be paid while it is ${pb.status}`);
-    }
-
-    const results = await Promise.all(
-      pb.bookings.map((booking) => this.createPaymentForBooking(userId, booking, dto.method)),
-    );
-
-    return {
-      message: 'Payment processed for every service in the package',
-      data: results.map((r) => r.data),
-    };
   }
 
   private async processElectronicPayment(payment: Payment) {
@@ -239,9 +214,10 @@ export class PaymentsService {
     // whether the booking can now move to IN_PROGRESS. A package-sourced
     // booking progresses with its PackageBooking siblings, not with
     // whatever else happens to share its (optional) eventId — those are two
-    // different "wait for everyone" groups (docs/packages-implementation-plan.md §12.4).
-    if (booking.packageBookingId) {
-      await this.packagesService.tryProgressPackageBooking(booking.packageBookingId);
+    // different "wait for everyone" groups (docs/implementation_plan.md §3,
+    // §6.3).
+    if (booking.packageEventBookingId) {
+      await this.packagesService.tryProgressPackageBooking(booking.packageEventBookingId);
     }
      else if (booking.eventId) {
       await this.bookingsService.tryProgressEvent(booking.eventId);

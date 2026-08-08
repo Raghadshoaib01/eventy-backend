@@ -13,7 +13,7 @@ import { AvailableServicesQueryDto } from './dto/available-services-query.dto';
 import { ServiceDetailQueryDto } from './dto/service-detail-query.dto';
 import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { EngagementService } from 'src/shared/services/engagement.service';
-import { FileType, PackageStatus, PackagePricingStrategy, DayOfWeek, Discount } from '@prisma/client';
+import { ServiceStatus, FileType, DayOfWeek, Discount } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 
 import { DiscountsService } from '../discounts/discounts.service';
@@ -125,8 +125,7 @@ async createService(
         serviceLogo: serviceLogoUrl,
         businessFile: businessFileUrl,
         price: dto.price,
-        isPackaged: !!packageId,
-        packageId: packageId ?? undefined,
+        isPackaged: dto.isPackaged ?? false,
         eventTypes: {
           create: dto.eventTypes.map((type) => ({
             eventType: type,
@@ -476,11 +475,6 @@ async getServiceById(
       throw new ForbiddenException('Access denied');
     }
 
-    if (service.isPackaged) {
-      throw new BadRequestException(
-        'Package-exclusive services must be removed via the package endpoints, not deleted directly (docs/packages-implementation-plan.md §8.1)',
-      );
-    }
 
     const activeBooking = await this.prisma.booking.findFirst({
       where: { serviceId, status: { notIn: ['COMPLETED', 'CANCELLED', 'REJECTED'] } },
@@ -489,20 +483,9 @@ async getServiceById(
       throw new BadRequestException('Cannot delete a service with active bookings');
     }
 
-    // Capture affected packages BEFORE the delete cascades their PackageItem rows away.
-    const affectedItems = await this.prisma.packageItem.findMany({
-      where: { serviceId },
-      select: { packageId: true },
-    });
-    const affectedPackageIds = [...new Set(affectedItems.map((i) => i.packageId))];
-
     await this.prisma.service.delete({
       where: { id: serviceId },
     });
-
-    for (const packageId of affectedPackageIds) {
-      await this.revalidatePackageAfterServiceRemoval(userId, packageId, service.serviceType.name);
-    }
 
     return {
       message: 'Service deleted successfully',
@@ -510,40 +493,6 @@ async getServiceById(
     };
   }
 
-  private async revalidatePackageAfterServiceRemoval(actorId: string, packageId: string, removedServiceName: string) {
-    const pkg = await this.prisma.package.findUnique({
-      where: { id: packageId },
-      include: {
-        provider: { include: { user: true } },
-        exclusiveServices: { include: { serviceType: true } },
-        attachedItems: { include: { service: { include: { serviceType: true } } } },
-      },
-    });
-    if (!pkg) return;
-
-    const remaining = [...pkg.exclusiveServices, ...pkg.attachedItems.map((i) => i.service)];
-
-    let stillValid = remaining.length > 0;
-    if (stillValid && pkg.pricingStrategy === PackagePricingStrategy.GUEST_BASED) {
-      const hallCount = remaining.filter((s) => s.serviceType.isVenue).length;
-      stillValid = hallCount === 1 && remaining.length >= 2;
-    }
-
-    const willDeactivate = !stillValid && pkg.status === PackageStatus.ACTIVE;
-    if (willDeactivate) {
-      await this.prisma.package.update({ where: { id: packageId }, data: { status: PackageStatus.INACTIVE } });
-    }
-
-    this.domainEventBus.packageServiceRemoved({
-      actorId,
-      targetUserId: pkg.provider.userId,
-      entityId: pkg.id,
-      packageId: pkg.id,
-      packageName: pkg.name,
-      serviceName: removedServiceName,
-      packageDeactivated: willDeactivate,
-    });
-  }
 
   // ========================
   //  Available Services

@@ -132,6 +132,7 @@ export class ProviderAuthService {
                 minCapacity: isHallOrSound ? dto.minCapacity : null,
                 maxCapacity: isHallOrSound ? dto.maxCapacity : null,
                 price: isHallOrSound ? dto.price : null,
+                isPackaged: dto.isPackaged ?? false,
                 eventTypes: {
                   create: dto.eventTypes.map((et) => ({
                     eventType: et,

@@ -69,6 +69,7 @@ enum NotificationType {
   PACKAGE_JOIN_EXPIRED
   PACKAGE_BOOKING_EXPIRED
   PACKAGE_PAYMENT_EXPIRED
+  PACKAGE_CANCELLED
 
   // Discounts (docs/discounts-implementation-plan.md §7)
   DISCOUNT_CANCELLED

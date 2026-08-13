@@ -53,7 +53,7 @@ export class CreatePackageDto {
     description: 'two or more serviceIds to attach to this package',
   })
   @IsArray()
-  @ArrayMinSize(2)
+  @ArrayMinSize(1)
   @Type(() => PackageServiceInputDto)
   services: PackageServiceInputDto[];
 }

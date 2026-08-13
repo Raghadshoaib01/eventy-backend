@@ -50,6 +50,87 @@ import { AuditAction } from '@prisma/client';
 @Controller('packages')
 export class PackagesController {
   constructor(private readonly packagesService: PackagesService) {}
+  // ════════════════════════════════════════════════════════════════════
+  // CUSTOMER — exclusive-package browsing + booking + payment
+  // ════════════════════════════════════════════════════════════════════
+
+  @Get('exclusive')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard,RolesGuard)
+  @Roles(UserRole.CUSTOMER)
+  @ApiOperation({
+    summary: 'Browse all ACTIVE exclusive packages',
+    description: '**Allowed roles:** any authenticated user (typically CUSTOMER).',
+  })
+  listExclusivePackages() {
+    return this.packagesService.listExclusivePackages();
+  }
+
+  @Get('exclusive/:id')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard)
+  @ApiParam({ name: 'id', description: 'Package UUID' })
+  @ApiOperation({
+    summary: 'Get details of an exclusive package',
+    description: '**Allowed roles:** any authenticated user (typically CUSTOMER).',
+  })
+  getExclusivePackageDetails(@Param('id') id: string) {
+    return this.packagesService.getExclusivePackageDetails(id);
+  }
+
+  @Post('exclusive/:id/book')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.CREATED)
+  @Audit({ action: AuditAction.BOOKING_CREATE, entity: 'PackageEventBooking', entityIdKey: 'id' })
+  @ApiParam({ name: 'id', description: 'Package UUID' })
+  @ApiOperation({
+    summary: 'Book an entire exclusive package',
+    description: '**Allowed roles:** any authenticated user (service-level checks verify CUSTOMER ownership).',
+  })
+  bookPackage(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: BookPackageDto,
+  ) {
+    return this.packagesService.bookPackage(req.user.sub, id, dto);
+  }
+
+  @Post('bookings/:id/pay')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.UPDATE, entity: 'PackageEventBooking', entityIdKey: 'id' })
+  @ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
+  @ApiOperation({
+    summary: 'Pay for an accepted package booking (BANK_TRANSFER or CASH)',
+    description: '**Allowed roles:** the customer who owns the package booking.',
+  })
+  payPackageBooking(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: PayPackageBookingDto,
+  ) {
+    return this.packagesService.payPackageBooking(req.user.sub, id, dto);
+  }
+
+  @Post('bookings/:id/cancel')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.BOOKING_CANCEL, entity: 'PackageEventBooking', entityIdKey: 'id' })
+  @ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
+  @ApiOperation({
+    summary: 'Cancel my package booking',
+    description: '**Allowed roles:** the customer who owns the package booking.',
+  })
+  cancelPackageBooking(
+    @Request() req,
+    @Param('id') id: string,
+    @Body() dto: PackageBookingCancelDto,
+  ) {
+    return this.packagesService.cancelPackageBooking(req.user.sub, id, dto.reason);
+  }
 
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package authoring & lifecycle
@@ -326,84 +407,4 @@ export class PackagesController {
     return this.packagesService.completePackageBooking(req.user.sub, id);
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // CUSTOMER — exclusive-package browsing + booking + payment
-  // ════════════════════════════════════════════════════════════════════
-
-  @Get('exclusive')
-  @ApiTags('Packages-Customer')
-  @UseGuards(JwtAuthGuard)
-  @ApiOperation({
-    summary: 'Browse all ACTIVE exclusive packages',
-    description: '**Allowed roles:** any authenticated user (typically CUSTOMER).',
-  })
-  listExclusivePackages() {
-    return this.packagesService.listExclusivePackages();
-  }
-
-  @Get('exclusive/:id')
-  @ApiTags('Packages-Customer')
-  @UseGuards(JwtAuthGuard)
-  @ApiParam({ name: 'id', description: 'Package UUID' })
-  @ApiOperation({
-    summary: 'Get details of an exclusive package',
-    description: '**Allowed roles:** any authenticated user (typically CUSTOMER).',
-  })
-  getExclusivePackageDetails(@Param('id') id: string) {
-    return this.packagesService.getExclusivePackageDetails(id);
-  }
-
-  @Post('exclusive/:id/book')
-  @ApiTags('Packages-Customer')
-  @UseGuards(JwtAuthGuard)
-  @HttpCode(HttpStatus.CREATED)
-  @Audit({ action: AuditAction.BOOKING_CREATE, entity: 'PackageEventBooking', entityIdKey: 'id' })
-  @ApiParam({ name: 'id', description: 'Package UUID' })
-  @ApiOperation({
-    summary: 'Book an entire exclusive package',
-    description: '**Allowed roles:** any authenticated user (service-level checks verify CUSTOMER ownership).',
-  })
-  bookPackage(
-    @Request() req,
-    @Param('id') id: string,
-    @Body() dto: BookPackageDto,
-  ) {
-    return this.packagesService.bookPackage(req.user.sub, id, dto);
-  }
-
-  @Post('bookings/:id/pay')
-  @ApiTags('Packages-Customer')
-  @UseGuards(JwtAuthGuard)
-  @HttpCode(HttpStatus.OK)
-  @Audit({ action: AuditAction.UPDATE, entity: 'PackageEventBooking', entityIdKey: 'id' })
-  @ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
-  @ApiOperation({
-    summary: 'Pay for an accepted package booking (BANK_TRANSFER or CASH)',
-    description: '**Allowed roles:** the customer who owns the package booking.',
-  })
-  payPackageBooking(
-    @Request() req,
-    @Param('id') id: string,
-    @Body() dto: PayPackageBookingDto,
-  ) {
-    return this.packagesService.payPackageBooking(req.user.sub, id, dto);
-  }
-
-  @Post('bookings/:id/cancel')
-  @ApiTags('Packages-Customer')
-  @UseGuards(JwtAuthGuard)
-  @HttpCode(HttpStatus.OK)
-  @Audit({ action: AuditAction.BOOKING_CANCEL, entity: 'PackageEventBooking', entityIdKey: 'id' })
-  @ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
-  @ApiOperation({
-    summary: 'Cancel my package booking',
-    description: '**Allowed roles:** the customer who owns the package booking.',
-  })
-  cancelPackageBooking(
-    @Request() req,
-    @Param('id') id: string,
-    @Body() dto: PackageBookingCancelDto,
-  ) {
-    return this.packagesService.cancelPackageBooking(req.user.sub, id, dto.reason);
-  }
 }

@@ -40,6 +40,7 @@ import {
   PackageJoinExpiredPayload,
   PackageBookingExpiredPayload,
   PackagePaymentExpiredPayload,
+  PackageCancelledPayload,
 } from 'src/common/events/domain-events';
 import { NotificationsService } from './notifications.service';
 
@@ -605,6 +606,20 @@ async handlePackagePaymentExpired(payload: PackagePaymentExpiredPayload): Promis
   });
 }
 
+@OnEvent(DomainEvents.PACKAGE_CANCELLED, { async: true })
+async handlePackageCancelled(payload: PackageCancelledPayload): Promise<void> {
+  await this.deliver({
+    userId: payload.targetUserId,
+    type: NotificationType.PACKAGE_CANCELLED,
+    title: 'Package Cancelled',
+    body: `The package "${payload.packageName}" you were part of has been cancelled by its owner.`,
+    metadata: {
+      screen: 'package-details',
+      packageId: payload.packageId,
+      actorUserId: payload.actorId,
+    },
+  });
+}
   // ─────────────────────────────────────────────────────────────
   // DISCOUNT EVENTS (docs/discounts-implementation-plan.md §7)
   // ─────────────────────────────────────────────────────────────

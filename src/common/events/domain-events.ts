@@ -53,6 +53,7 @@ export const DomainEvents = {
   PACKAGE_JOIN_EXPIRED: 'package.join.expired',
   PACKAGE_BOOKING_EXPIRED: 'package.booking.expired',
   PACKAGE_PAYMENT_EXPIRED: 'package.payment.expired',
+  PACKAGE_CANCELLED: 'package.cancelled',
 
   // Discount
   DISCOUNT_CANCELLED: 'discount.cancelled',
@@ -268,6 +269,11 @@ export interface PackagePaymentExpiredPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
   packageEventBookingId: string;
+}
+
+export interface PackageCancelledPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
 }
 
 export interface DiscountCancelledPayload extends BaseDomainEventPayload {

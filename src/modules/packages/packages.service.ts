@@ -479,15 +479,27 @@ async getJoinedPackageDetails(userId: string, packageId: string) {
   });
   return { message: 'Joined package details retrieved', data: pkg };
 }
-  async leavePackage(userId: string, packageId: string) {
+async leavePackage(userId: string, packageId: string) {
   const provider = await this.resolveProvider(userId);
+
+  const pkg = await this.prisma.package.findUnique({
+    where: { id: packageId },
+    select: { id: true, name: true, status: true, providerId: true },
+  });
+  if (!pkg) throw new NotFoundException('Package not found');
+
+  // ── الحالة أ: المستخدم هو مالك الباقة → إلغاء الباقة بالكامل ──
+  if (pkg.providerId === provider.id) {
+    return this.cancelOwnedPackage(userId, provider, pkg);
+  }
+
+  // ── الحالة ب: المستخدم شريك → مغادرة شراكته فقط ──
   const membership = await this.prisma.packageService.findFirst({
     where: { packageId, providerId: provider.id, status: 'ACTIVE' },
     include: { package: { include: { provider: { include: { user: true } } } } },
   });
   if (!membership) throw new NotFoundException('You are not an active partner in this package');
 
-  // منع الانسحاب أثناء وجود حجز جماعي نشط تابع لهذه الخدمة
   const activeEngagement = await this.prisma.booking.findFirst({
     where: {
       serviceId: membership.serviceId,
@@ -523,6 +535,61 @@ async getJoinedPackageDetails(userId: string, packageId: string) {
     message:
       'You have left the package. You will no longer receive new bookings from it — please complete any currently active bookings.',
     data: { packageId, status: 'LEFT' },
+  };
+}
+
+/**
+ * مسار مالك الباقة عند استدعاء /leave: إلغاء الباقة بالكامل — رفض كل
+ * الشراكات الفعالة/المعلّقة، وإشعار كل من كانت خدماتهم Active بأن الباقة أُلغيت.
+ */
+private async cancelOwnedPackage(
+  userId: string,
+  provider: { id: string; businessName: string },
+  pkg: { id: string; name: string; status: string },
+) {
+  if (pkg.status === 'CANCELLED') {
+    throw new BadRequestException('Package is already cancelled');
+  }
+
+  const activeBookings = await this.prisma.packageEventBooking.count({
+    where: {
+      packageId: pkg.id,
+      status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
+    },
+  });
+  if (activeBookings > 0) {
+    throw new BadRequestException(
+      'Cannot cancel a package that has active bookings — resolve them first',
+    );
+  }
+
+  const activePartnerServices = await this.prisma.packageService.findMany({
+    where: { packageId: pkg.id, status: 'ACTIVE' },
+    include: { provider: { include: { user: true } } },
+  });
+
+  await this.prisma.$transaction(async (tx) => {
+    await tx.packageService.updateMany({
+      where: { packageId: pkg.id, status: { in: ['ACTIVE', 'PENDING_PROVIDER_APPROVAL'] } },
+      data: { status: 'REJECTED' },
+    });
+    await tx.package.update({ where: { id: pkg.id }, data: { status: 'CANCELLED' } });
+  });
+
+  for (const ps of activePartnerServices) {
+    if (ps.providerId === provider.id) continue; // لا نُشعر المالك بنفسه
+    this.domainEventBus.packageCancelled({
+      actorId: userId,
+      targetUserId: ps.provider.user.id,
+      entityId: pkg.id,
+      packageId: pkg.id,
+      packageName: pkg.name,
+    });
+  }
+
+  return {
+    message: 'Package cancelled. All partner memberships were rejected and partners have been notified.',
+    data: { packageId: pkg.id, status: 'CANCELLED' },
   };
 }
 

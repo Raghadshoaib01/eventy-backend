@@ -39,6 +39,7 @@ import {
   PackageJoinExpiredPayload,
   PackageBookingExpiredPayload,
   PackagePaymentExpiredPayload,
+  PackageCancelledPayload,
 } from './domain-events';
 
 /**
@@ -184,6 +185,9 @@ packageBookingExpired(payload: PackageBookingExpiredPayload): void {
 }
 packagePaymentExpired(payload: PackagePaymentExpiredPayload): void {
   this.emitter.emit(DomainEvents.PACKAGE_PAYMENT_EXPIRED, payload);
+}
+packageCancelled(payload: PackageCancelledPayload): void {
+  this.emitter.emit(DomainEvents.PACKAGE_CANCELLED, payload);
 }
   // ── Discount ──────────────────────────────────────────────
 

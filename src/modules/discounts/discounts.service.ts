@@ -233,13 +233,19 @@ export class DiscountsService {
   }
 
   private async cancel(discountId: string, actorId: string) {
+       // Status must be checked BEFORE the mutation — checking the post-update
+    // record here would always read back CANCELLED and this guard would
+    // never pass, permanently blocking cancellation for every discount.
+    const existing = await this.prisma.discount.findUnique({ where: { id: discountId } });
+    if (!existing) throw new NotFoundException('Discount not found');
+    if (existing.status !== DiscountStatus.ACTIVE) {
+      throw new BadRequestException('Only active discounts can be cancelled');
+    }
+
     const discount = await this.prisma.discount.update({
       where: { id: discountId },
       data: { status: DiscountStatus.CANCELLED },
     });
-    if (discount.status !== DiscountStatus.ACTIVE) {
-  throw new BadRequestException('Only active discounts can be cancelled');
-}
     // Only notify if someone other than the creator did the cancelling —
     // a provider cancelling their own discount doesn't need to be told
     // about their own action (docs §7).

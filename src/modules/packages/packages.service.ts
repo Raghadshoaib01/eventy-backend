@@ -99,51 +99,132 @@ export class PackagesService {
    * this architecture cross-provider composition is out of scope; each row
    * is therefore born in ACTIVE status, no join-request round-trip.
    */
-  async createPackage(userId: string, dto: CreatePackageDto) {
-    const provider = await this.resolveProvider(userId);
+  // src/modules/packages/packages.service.ts
 
-    const serviceIds = [...new Set(dto.services.map((s) => s.serviceId))];
-    const owned = await this.prisma.service.findMany({
-      where: { id: { in: serviceIds }, providerId: provider.id },
-      select: { id: true, isPackaged: true },
-    });
+async createPackage(userId: string, dto: CreatePackageDto) {
+  const provider = await this.resolveProvider(userId);
+  const serviceIds = [...new Set(dto.services.map((s) => s.serviceId))];
 
-    if (owned.length !== serviceIds.length) {
-      const found = new Set(owned.map((s) => s.id));
-      const missing = serviceIds.filter((id) => !found.has(id));
-      throw new BadRequestException(
-        `Services not found or not owned by this provider: ${missing.join(', ')}`,
-      );
-    }
-
-    const packageRow = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.package.create({
-        data: {
-          providerId: provider.id,
-          name: dto.name,
-          description: dto.description ?? null,
-          discountPercentage: dto.discountPercentage ?? 0,
-          status: 'DRAFT',
-        },
-      });
-
-      await tx.packageService.createMany({
-        data: serviceIds.map((serviceId) => ({
-          packageId: created.id,
-          providerId: provider.id,
-          serviceId,
-          status: 'ACTIVE',
-        })),
-      });
-
-      return created;
-    });
-
-    return {
-      message: 'Package created (DRAFT). Activate once requirements are met.',
-      data: packageRow,
-    };
+  // 1) جلب كل الخدمات المطلوبة بغض النظر عن المالك
+  const services = await this.prisma.service.findMany({
+    where: { id: { in: serviceIds }, approvalStatus: 'ACTIVE'
+    //, deletedAt: null 
+  },
+    select: { id: true, providerId: true, serviceType: { select: { name: true } } },
+  });
+  if (services.length !== serviceIds.length) {
+    const found = new Set(services.map((s) => s.id));
+    const missing = serviceIds.filter((id) => !found.has(id));
+    throw new BadRequestException(`Services not found or not active: ${missing.join(', ')}`);
   }
+
+  // 2) يجب أن يملك المزود الحالي خدمة HALL بـ isPackaged = true
+  const ownsPackagedHall = await this.prisma.service.findFirst({
+    where: {
+      providerId: provider.id,
+      isPackaged: true,
+      serviceType: { name: 'HALL' },
+    },
+  });
+  if (!ownsPackagedHall) {
+    throw new BadRequestException(
+      'You must own a Hall service with isPackaged=true before creating a package',
+    );
+  }
+
+  // 3) خدمتين على الأقل
+  if (serviceIds.length < 2) {
+    throw new BadRequestException('A package requires at least 2 services');
+  }
+
+  // 4) عدم وجود Package أخرى بنفس مجموعة الخدمات (لأي مزود)
+  const sortedIds = [...serviceIds].sort();
+  const candidateDupes = await this.prisma.package.findMany({
+    where: { status: { not: 'CANCELLED' }, services: { some: { serviceId: { in: serviceIds } } } },
+    include: { services: { select: { serviceId: true } } },
+  });
+  const hasDuplicateSet = candidateDupes.some((p) => {
+    const existingIds = p.services.map((s) => s.serviceId).sort();
+    return (
+      existingIds.length === sortedIds.length &&
+      existingIds.every((id, i) => id === sortedIds[i])
+    );
+  });
+  if (hasDuplicateSet) {
+    throw new BadRequestException('A package with the exact same set of services already exists');
+  }
+
+  // 5) وقت مشترك بين جميع خدمات الباقة (تقاطع أيام العمل على الأقل)
+  const availabilities = await this.prisma.serviceAvailability.findMany({
+    where: { serviceId: { in: serviceIds } },
+    include: { workingDays: true },
+  });
+  const dayScopeByService = new Map<string, Set<string>>();
+  for (const avail of availabilities) {
+    const set = dayScopeByService.get(avail.serviceId) ?? new Set<string>();
+    avail.workingDays.forEach((d) => set.add(d.dayOfWeek));
+    dayScopeByService.set(avail.serviceId, set);
+  }
+  const allDaySets = serviceIds.map((id) => dayScopeByService.get(id) ?? new Set<string>());
+  const commonDays = [...(allDaySets[0] ?? [])].filter((day) =>
+    allDaySets.every((set) => set.has(day)),
+  );
+  if (commonDays.length === 0) {
+    throw new BadRequestException('The selected services have no common available day/time window');
+  }
+
+  // 6) الإنشاء + تحديد الحالة حسب المالك
+  const packageRow = await this.prisma.$transaction(async (tx) => {
+    const created = await tx.package.create({
+      data: {
+        providerId: provider.id,
+        name: dto.name,
+        description: dto.description ?? null,
+        discountPercentage: dto.discountPercentage ?? 0,
+        status: 'DRAFT',
+      },
+    });
+
+    await tx.packageService.createMany({
+      data: services.map((svc) => ({
+        packageId: created.id,
+        providerId: svc.providerId,
+        serviceId: svc.id,
+        status: svc.providerId === provider.id ? 'ACTIVE' : 'PENDING_PROVIDER_APPROVAL',
+      })),
+    });
+
+    return created;
+  });
+
+  // 7) إشعار الشركاء (خدماتهم PENDING) بطلب الانضمام
+  const partnerServices = services.filter((s) => s.providerId !== provider.id);
+  if (partnerServices.length > 0) {
+    const partnerProviders = await this.prisma.serviceProvider.findMany({
+      where: { id: { in: partnerServices.map((s) => s.providerId) } },
+      select: { id: true, userId: true },
+    });
+    for (const partner of partnerProviders) {
+      const svc = partnerServices.find((s) => s.providerId === partner.id);
+      this.domainEventBus.packageJoinRequested({
+        actorId: userId,
+        targetUserId: partner.userId,
+        entityId: packageRow.id,
+        packageId: packageRow.id,
+        packageName: packageRow.name,
+        ownerProviderName: provider.businessName,
+        serviceName: svc?.serviceType.name,
+      });
+    }
+  }
+
+  return {
+    message: partnerServices.length
+      ? 'Package created (DRAFT). Join requests sent to partner providers.'
+      : 'Package created (DRAFT).',
+    data: packageRow,
+  };
+}
 
   /**
    * `PATCH /api/v1/packages/:id`
@@ -216,47 +297,50 @@ export class PackagesService {
     return { message: 'Package retrieved successfully', data: pkg };
   }
 
-  /**
-   * `PATCH /api/v1/packages/:id/activate`
-   * Requires ≥ 2 active services (implementation_plan.md §3). Promotes
-   * DRAFT → ACTIVE, suspends any PACKAGE-scope discounts that need
-   * reconfirmation (composition has changed).
-   */
-  async activatePackage(userId: string, packageId: string) {
-    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
-    if (pkg.status !== 'DRAFT') {
-      throw new BadRequestException(
-        `Only DRAFT packages can be activated (current status: ${pkg.status})`,
-      );
-    }
 
-    const activeCount = await this.prisma.packageService.count({
-      where: { packageId, status: 'ACTIVE' },
-    });
-    if (activeCount < 2) {
-      throw new BadRequestException(
-        'A package needs at least 2 active services before activation',
-      );
-    }
+async activatePackage(userId: string, packageId: string) {
+  const provider = await this.resolveProvider(userId);
+  const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
+  if (pkg.status !== 'DRAFT') {
+    throw new BadRequestException(
+      `Only DRAFT packages can be activated (current status: ${pkg.status})`,
+    );
+  }
 
-    const updated = await this.prisma.package.update({
-      where: { id: packageId },
-      data: { status: 'ACTIVE' },
-    });
+  const activeCount = await this.prisma.packageService.count({
+    where: { packageId, status: 'ACTIVE' },
+  });
+  if (activeCount < 2) {
+    throw new BadRequestException(
+      'A package needs at least 2 active services before activation',
+    );
+  }
 
-    await this.discountsService.suspendDiscountsForPackage(packageId);
+  const updated = await this.prisma.package.update({
+    where: { id: packageId },
+    data: { status: 'ACTIVE' },
+  });
 
+  await this.discountsService.suspendDiscountsForPackage(packageId);
+
+  const activePartners = await this.prisma.packageService.findMany({
+    where: { packageId, status: 'ACTIVE' },
+    include: { provider: { include: { user: true } } },
+  });
+  for (const partner of activePartners) {
+    if (partner.providerId === provider.id) continue; // لا نُشعر المالك بنفسه
     this.domainEventBus.packageActivated({
       actorId: userId,
-      targetUserId: userId,
+      targetUserId: partner.provider.user.id,
       entityId: packageId,
       packageId,
       packageName: updated.name,
-      ownerProviderName: '', // populated by listener via metadata; safe to leave blank
+      ownerProviderName: provider.businessName,
     });
-
-    return { message: 'Package activated', data: updated };
   }
+
+  return { message: 'Package activated', data: updated };
+}
 
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package join-request inbox (kept thin: this architecture
@@ -267,94 +351,180 @@ export class PackagesService {
   /**
    * `GET /api/v1/packages/join-requests/pending`
    */
-  async getPendingJoinRequests(userId: string) {
-    await this.resolveProvider(userId);
-    return { message: 'No pending join requests', data: [] };
-  }
+// src/modules/packages/packages.service.ts
 
-  /**
-   * `GET /api/v1/packages/join-requests/:id`
-   */
-  async getJoinRequestDetails(userId: string, _requestId: string) {
-    await this.resolveProvider(userId);
-    return { message: 'Join request not found', data: null };
-  }
-
-  /**
-   * `POST /api/v1/packages/:id/join/accept`
-   */
-  async acceptJoinRequest(userId: string, _packageId: string) {
-    await this.resolveProvider(userId);
-    return { message: 'No join request to accept', data: null };
-  }
-
-  /**
-   * `POST /api/v1/packages/:id/join/reject`
-   */
-  async rejectJoinRequest(userId: string, _packageId: string) {
-    await this.resolveProvider(userId);
-    return { message: 'No join request to reject', data: null };
-  }
-
-  /**
-   * `GET /api/v1/packages/joined`
-   * In single-provider-only mode, every package the provider owns IS the
-   * one they've "joined" via PackageService rows. Reuse the my-packages
-   * view but filter to ACTIVE.
-   */
-  async getJoinedPackages(userId: string) {
-    const provider = await this.resolveProvider(userId);
-    const packages = await this.prisma.package.findMany({
-      where: {
-        providerId: provider.id,
-        status: 'ACTIVE',
+async getPendingJoinRequests(userId: string) {
+  const provider = await this.resolveProvider(userId);
+  const rows = await this.prisma.packageService.findMany({
+    where: { providerId: provider.id, status: 'PENDING_PROVIDER_APPROVAL' },
+    include: {
+      package: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          discountPercentage: true,
+          provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true } } } },
+        },
       },
-      include: {
-        services: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
-        eventBookings: { select: { id: true, status: true } },
+      service: { select: { id: true, serviceType: { select: { name: true } } } },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  return { message: 'Pending join requests retrieved', data: rows };
+}
+
+async getJoinRequestDetails(userId: string, packageId: string) {
+  const provider = await this.resolveProvider(userId);
+  const row = await this.prisma.packageService.findFirst({
+    where: { packageId, providerId: provider.id, status: 'PENDING_PROVIDER_APPROVAL' },
+    include: {
+      package: {
+        include: { provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true, phoneNumber: true } } } } },
       },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { message: 'Joined packages retrieved successfully', data: packages };
-  }
+      service: { include: { serviceType: { select: { name: true } } } },
+    },
+  });
+  if (!row) throw new NotFoundException('Join request not found');
+  return { message: 'Join request details retrieved', data: row };
+}
 
-  /**
-   * `GET /api/v1/packages/joined/:id`
-   */
-  async getJoinedPackageDetails(userId: string, packageId: string) {
-    return this.getPackageForProvider(userId, packageId);
-  }
+async acceptJoinRequest(userId: string, packageId: string) {
+  const provider = await this.resolveProvider(userId);
+  const row = await this.prisma.packageService.findFirst({
+    where: { packageId, providerId: provider.id, status: 'PENDING_PROVIDER_APPROVAL' },
+    include: { package: { include: { provider: { include: { user: true } } } } },
+  });
+  if (!row) throw new NotFoundException('Join request not found or already resolved');
 
-  /**
-   * `POST /api/v1/packages/:id/leave`
-   * In single-provider-only mode, "leaving" means cancelling the package
-   * outright. Only valid while no active bookings reference it.
-   */
+  await this.prisma.packageService.update({ where: { id: row.id }, data: { status: 'ACTIVE' } });
+
+  this.domainEventBus.packageJoinAccepted({
+    actorId: userId,
+    targetUserId: row.package.provider.user.id,
+    entityId: packageId,
+    packageId,
+    packageName: row.package.name,
+    partnerProviderName: provider.businessName,
+  });
+
+  return {
+    message:
+      'Joined the package successfully. You will receive bookings automatically once the owner confirms, and the package discount will apply. You can leave later.',
+    data: { packageId, status: 'ACTIVE' },
+  };
+}
+
+async rejectJoinRequest(userId: string, packageId: string) {
+  const provider = await this.resolveProvider(userId);
+  const row = await this.prisma.packageService.findFirst({
+    where: { packageId, providerId: provider.id, status: 'PENDING_PROVIDER_APPROVAL' },
+    include: { package: { include: { provider: { include: { user: true } } } } },
+  });
+  if (!row) throw new NotFoundException('Join request not found or already resolved');
+
+  await this.prisma.packageService.update({ where: { id: row.id }, data: { status: 'REJECTED' } });
+
+  this.domainEventBus.packageJoinRejected({
+    actorId: userId,
+    targetUserId: row.package.provider.user.id,
+    entityId: packageId,
+    packageId,
+    packageName: row.package.name,
+    partnerProviderName: provider.businessName,
+  });
+
+  return { message: 'Join request rejected', data: { packageId, status: 'REJECTED' } };
+}
+async getJoinedPackages(userId: string) {
+  const provider = await this.resolveProvider(userId);
+  const rows = await this.prisma.packageService.findMany({
+    where: { providerId: provider.id, status: 'ACTIVE' },
+    include: {
+      package: {
+        select: {
+          id: true,
+          name: true,
+          description: true,
+          discountPercentage: true,
+          status: true,
+          provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true } } } },
+        },
+      },
+    },
+    orderBy: { createdAt: 'desc' },
+  });
+  return {
+    message: 'Joined packages retrieved successfully',
+    data: rows.map((r) => r.package),
+  };
+}
+
+async getJoinedPackageDetails(userId: string, packageId: string) {
+  const provider = await this.resolveProvider(userId);
+  const membership = await this.prisma.packageService.findFirst({
+    where: { packageId, providerId: provider.id, status: 'ACTIVE' },
+  });
+  if (!membership) throw new NotFoundException('You are not an active partner in this package');
+
+  const pkg = await this.prisma.package.findUnique({
+    where: { id: packageId },
+    include: {
+      provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true, phoneNumber: true } } } },
+      services: {
+        where: { status: 'ACTIVE' },
+        include: { service: { include: { serviceType: { select: { name: true } }, files: { take: 1 } } } },
+      },
+    },
+  });
+  return { message: 'Joined package details retrieved', data: pkg };
+}
   async leavePackage(userId: string, packageId: string) {
-    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
-    if (pkg.status === 'CANCELLED') {
-      throw new BadRequestException('Package is already cancelled');
-    }
+  const provider = await this.resolveProvider(userId);
+  const membership = await this.prisma.packageService.findFirst({
+    where: { packageId, providerId: provider.id, status: 'ACTIVE' },
+    include: { package: { include: { provider: { include: { user: true } } } } },
+  });
+  if (!membership) throw new NotFoundException('You are not an active partner in this package');
 
-    const activeBookings = await this.prisma.packageEventBooking.count({
-      where: {
-        packageId,
-        status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
-      },
-    });
-    if (activeBookings > 0) {
-      throw new BadRequestException(
-        'Cannot leave a package that has active bookings — cancel them first',
-      );
-    }
-
-    const updated = await this.prisma.package.update({
-      where: { id: packageId },
-      data: { status: 'CANCELLED' },
-    });
-
-    return { message: 'Package cancelled (left)', data: updated };
+  // منع الانسحاب أثناء وجود حجز جماعي نشط تابع لهذه الخدمة
+  const activeEngagement = await this.prisma.booking.findFirst({
+    where: {
+      serviceId: membership.serviceId,
+      packageEventBookingId: { not: null },
+      status: { in: ['CONFIRMED', 'IN_PROGRESS'] },
+    },
+  });
+  if (activeEngagement) {
+    throw new BadRequestException(
+      'Cannot leave while you have an active package booking engagement — complete it first',
+    );
   }
+
+  await this.prisma.packageService.update({ where: { id: membership.id }, data: { status: 'REJECTED' } });
+
+  this.domainEventBus.packagePartnerLeft({
+    actorId: userId,
+    targetUserId: membership.package.provider.user.id,
+    entityId: packageId,
+    packageId,
+    packageName: membership.package.name,
+    partnerProviderName: provider.businessName,
+  });
+
+  const remainingActive = await this.prisma.packageService.count({
+    where: { packageId, status: 'ACTIVE' },
+  });
+  if (remainingActive < 2 && membership.package.status === 'ACTIVE') {
+    await this.prisma.package.update({ where: { id: packageId }, data: { status: 'DRAFT' } });
+  }
+
+  return {
+    message:
+      'You have left the package. You will no longer receive new bookings from it — please complete any currently active bookings.',
+    data: { packageId, status: 'LEFT' },
+  };
+}
 
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package-event-booking inbox
@@ -409,45 +579,51 @@ export class PackagesService {
     });
   }
 
-  /**
-   * `POST /api/v1/packages/bookings/:id/accept`
-   * PENDING → CONFIRMED. Child bookings also flip to CONFIRMED so that
-   * payment can flow through PaymentsService.
-   */
   async acceptPackageBooking(userId: string, packageEventBookingId: string) {
-    const provider = await this.resolveProvider(userId);
-    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
-      providerId: provider.id,
-    });
+  const provider = await this.resolveProvider(userId);
+  const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { providerId: provider.id });
 
-    if (pb.status !== 'PENDING') {
-      throw new BadRequestException(
-        `Package booking cannot be accepted while it is ${pb.status}`,
-      );
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      await tx.packageEventBooking.update({
-        where: { id: packageEventBookingId },
-        data: { status: 'CONFIRMED' },
-      });
-      await tx.booking.updateMany({
-        where: { packageEventBookingId, status: 'PENDING' },
-        data: { status: 'CONFIRMED' },
-      });
-    });
-
-    this.domainEventBus.packageBookingAccepted({
-      actorId: userId,
-      targetUserId: pb.customerId,
-      entityId: packageEventBookingId,
-      packageId: pb.packageId,
-      packageName: pb.package.name,
-      packageEventBookingId,
-    });
-
-    return { message: 'Package booking accepted', data: { id: packageEventBookingId, status: 'CONFIRMED' } };
+  if (pb.status !== 'PENDING') {
+    throw new BadRequestException(`Package booking cannot be accepted while it is ${pb.status}`);
   }
+
+  const paymentExpiresAt = new Date(Date.now() + PACKAGE_PAYMENT_TIMEOUT_HOURS * 60 * 60 * 1000);
+
+  await this.prisma.$transaction(async (tx) => {
+    await tx.packageEventBooking.update({
+      where: { id: packageEventBookingId },
+      data: { status: 'PENDING_PAYMENT', paymentExpiresAt },
+    });
+    await tx.booking.updateMany({
+      where: { packageEventBookingId, status: 'PENDING' },
+      data: { status: 'CONFIRMED' },
+    });
+    await tx.payment.create({
+      data: {
+        packageEventBookingId,
+        payerId: pb.customerId,
+        amount: pb.totalAmount,
+        subtotalAmount: pb.totalAmount,
+        method: 'CASH', // placeholder — العميل سيحدد الطريقة الفعلية عند الدفع
+        status: 'PENDING',
+      },
+    });
+  });
+
+  this.domainEventBus.packageBookingAccepted({
+    actorId: userId,
+    targetUserId: pb.customerId,
+    entityId: packageEventBookingId,
+    packageId: pb.packageId,
+    packageName: pb.package.name,
+    packageEventBookingId,
+  });
+
+  return {
+    message: 'Package booking accepted. Customer has 24 hours to confirm payment.',
+    data: { id: packageEventBookingId, status: 'PENDING_PAYMENT' },
+  };
+}
 
   /**
    * `POST /api/v1/packages/bookings/:id/reject`
@@ -501,63 +677,38 @@ export class PackagesService {
     return { message: 'Package booking rejected', data: { id: packageEventBookingId, status: 'REJECTED' } };
   }
 
-  /**
-   * `POST /api/v1/packages/bookings/:id/confirm-payment`
-   * Provider confirms a CASH payment for the package booking. We delegate
-   * per-booking confirmation to PaymentsService — for each child booking
-   * that has a CASH Payment in PROCESSING, mark it PAID.
-   */
-  async confirmPackageCashPayment(userId: string, packageEventBookingId: string) {
-    const provider = await this.resolveProvider(userId);
-    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
-      providerId: provider.id,
-    });
+ async confirmPackageCashPayment(userId: string, packageEventBookingId: string) {
+  const provider = await this.resolveProvider(userId);
+  const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { providerId: provider.id });
 
-    if (pb.status !== 'PENDING_PAYMENT' && pb.status !== 'CONFIRMED') {
-      throw new BadRequestException(
-        `Package booking cannot have its payment confirmed while it is ${pb.status}`,
-      );
-    }
+  if (pb.status !== 'PENDING_PAYMENT') {
+    throw new BadRequestException(`Package booking cannot have its payment confirmed while it is ${pb.status}`);
+  }
+  if (!pb.payment || pb.payment.method !== 'CASH' || pb.payment.status !== 'PROCESSING') {
+    throw new BadRequestException('No pending cash payment found for this package booking');
+  }
 
-    // Find any CASH payments under child bookings still in PROCESSING and mark them PAID.
-    const childBookings = await this.prisma.booking.findMany({
-      where: { packageEventBookingId },
-      include: { payment: true },
-    });
+  await this.prisma.payment.update({
+    where: { id: pb.payment.id },
+    data: { status: 'PAID', paidAt: new Date() },
+  });
+  await this.progressPackageToInProgress(packageEventBookingId);
 
-    let confirmed = 0;
-    for (const b of childBookings) {
-      if (
-        b.payment &&
-        b.payment.method === PaymentMethod.CASH &&
-        b.payment.status === PaymentStatus.PROCESSING
-      ) {
-        await this.prisma.payment.update({
-          where: { id: b.payment.id },
-          data: { status: PaymentStatus.PAID, paidAt: new Date() },
-        });
-        confirmed++;
-      }
-    }
-
-    // After confirmation, re-evaluate the package booking progression.
-    await this.tryProgressPackageBooking(packageEventBookingId);
-
+  const partners = await this.getPackagePartnerUserIds(pb.packageId);
+  for (const partnerUserId of partners) {
     this.domainEventBus.packagePaymentConfirmed({
       actorId: userId,
-      targetUserId: pb.package.provider.user.id,
+      targetUserId: partnerUserId,
       entityId: packageEventBookingId,
       packageId: pb.packageId,
       packageName: pb.package.name,
       packageEventBookingId,
       amount: pb.totalAmount,
     });
-
-    return {
-      message: 'Package cash payment confirmed',
-      data: { id: packageEventBookingId, confirmedPayments: confirmed },
-    };
   }
+
+  return { message: 'Cash payment confirmed — booking is now in progress', data: { id: packageEventBookingId } };
+}
 
   /**
    * `POST /api/v1/packages/bookings/:id/complete`
@@ -765,6 +916,7 @@ export class PackagesService {
             eventId: event.id,
             status: 'PENDING',
             totalAmount: round2(totalAmount),
+            pendingExpiresAt: new Date(Date.now() + PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000), // ← جديد
             bookings: { create: childBookings },
           },
           include: {
@@ -813,113 +965,54 @@ export class PackagesService {
     });
   }
 
-  /**
-   * `POST /api/v1/packages/bookings/:id/cancel` — customer cancel
-   */
   async cancelPackageBooking(userId: string, packageEventBookingId: string, reason?: string) {
-    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
-      customerId: userId,
-    });
+  const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { customerId: userId });
 
-    if (!['PENDING', 'CONFIRMED', 'PENDING_PAYMENT'].includes(pb.status)) {
-      throw new BadRequestException(
-        `Package booking cannot be cancelled while it is ${pb.status}`,
-      );
-    }
+  const cancellable =
+    pb.status === 'PENDING' ||
+    (pb.status === 'PENDING_PAYMENT' && pb.payment?.status !== 'PAID');
 
-    await this.prisma.$transaction(async (tx) => {
-      await tx.packageEventBooking.update({
-        where: { id: packageEventBookingId },
-        data: { status: 'CANCELLED' },
-      });
-      await tx.booking.updateMany({
-        where: {
-          packageEventBookingId,
-          status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
-        },
-        data: {
-          status: 'CANCELLED',
-          cancelledAt: new Date(),
-          cancelledBy: 'CUSTOMER',
-          cancellationReason: reason ?? 'Package booking cancelled by customer',
-        },
-      });
-    });
-
-    return { message: 'Package booking cancelled', data: { id: packageEventBookingId, status: 'CANCELLED' } };
+  if (!cancellable) {
+    throw new BadRequestException(`Package booking cannot be cancelled while it is ${pb.status}`);
   }
 
-  /**
-   * `POST /api/v1/packages/bookings/:id/pay`
-   * Customer confirms payment for an already-accepted package booking.
-   *
-   * For BANK_TRANSFER: every child booking's Payment is created and run
-   * through the gateway in parallel (mirrors PaymentsService flow).
-   *
-   * For CASH: every child booking's Payment is recorded as PENDING then
-   * immediately flipped to PROCESSING — the package owner later confirms
-   * via `confirmPackageCashPayment`.
-   *
-   * The PACKAGE-scope discount code (if supplied) is applied here at the
-   * cached totalAmount only; per-child booking prices remain unchanged
-   * because each child booking already had its own SERVICE-scope discount
-   * resolved at quote time (and we do not double-stack).
-   */
-  async payPackageBooking(
-    userId: string,
-    packageEventBookingId: string,
-    dto: PayPackageBookingDto,
-  ) {
-    const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, {
-      customerId: userId,
+  await this.prisma.$transaction(async (tx) => {
+    await tx.packageEventBooking.update({ where: { id: packageEventBookingId }, data: { status: 'CANCELLED' } });
+    await tx.booking.updateMany({
+      where: { packageEventBookingId, status: { in: ['PENDING', 'CONFIRMED'] } },
+      data: { status: 'CANCELLED', cancelledAt: new Date(), cancelledBy: 'CUSTOMER', cancellationReason: reason ?? 'Cancelled by customer' },
     });
-
-    if (pb.status !== 'CONFIRMED' && pb.status !== 'PENDING_PAYMENT') {
-      throw new BadRequestException(
-        `Package booking cannot be paid while it is ${pb.status}`,
-      );
+    if (pb.payment && pb.payment.status !== 'PAID') {
+      await tx.payment.update({ where: { id: pb.payment.id }, data: { status: 'CANCELLED' } });
     }
+  });
 
-    // Move package booking into PENDING_PAYMENT while payments are processed
-    if (pb.status === 'CONFIRMED') {
-      await this.prisma.packageEventBooking.update({
-        where: { id: packageEventBookingId },
-        data: { status: 'PENDING_PAYMENT' },
-      });
-    }
+  return { message: 'Package booking cancelled', data: { id: packageEventBookingId, status: 'CANCELLED' } };
+}
 
-    const childBookings = await this.prisma.booking.findMany({
-      where: { packageEventBookingId },
-      include: { payment: true },
+ async payPackageBooking(userId: string, packageEventBookingId: string, dto: PayPackageBookingDto) {
+  const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { customerId: userId });
+
+  if (pb.status !== 'PENDING_PAYMENT') {
+    throw new BadRequestException(`Package booking cannot be paid while it is ${pb.status}`);
+  }
+  if (!pb.payment) throw new NotFoundException('No payment record found for this package booking');
+  if (pb.payment.status === 'PAID') {
+    return { message: 'Payment already completed', data: pb.payment };
+  }
+
+  if (dto.method === PaymentMethod.BANK_TRANSFER) {
+    const paid = await this.prisma.payment.update({
+      where: { id: pb.payment.id },
+      data: { method: dto.method, status: PaymentStatus.PAID, paidAt: new Date(), providerReference: `MOCK-BT-${pb.id}-${Date.now()}` },
     });
+    await this.progressPackageToInProgress(packageEventBookingId);
 
-    const results: unknown[] = [];
-    for (const b of childBookings) {
-      if (b.payment) {
-        results.push({ bookingId: b.id, message: 'Payment already exists' });
-        continue;
-      }
-      const subtotal = b.totalAmount;
-      const payment = await this.prisma.payment.create({
-        data: {
-          bookingId: b.id,
-          payerId: userId,
-          amount: subtotal,
-          subtotalAmount: subtotal,
-          method: dto.method,
-          status:
-            dto.method === PaymentMethod.BANK_TRANSFER
-              ? PaymentStatus.PROCESSING
-              : PaymentStatus.PROCESSING,
-        },
-      });
-      results.push({ bookingId: b.id, paymentId: payment.id, status: payment.status });
-    }
-
-    if (dto.method === PaymentMethod.CASH) {
-      this.domainEventBus.packagePaymentCashChosen({
+    const partners = await this.getPackagePartnerUserIds(pb.packageId);
+    for (const partnerUserId of partners) {
+      this.domainEventBus.packagePaymentConfirmed({
         actorId: userId,
-        targetUserId: pb.package.provider.user.id,
+        targetUserId: partnerUserId,
         entityId: packageEventBookingId,
         packageId: pb.packageId,
         packageName: pb.package.name,
@@ -927,15 +1020,58 @@ export class PackagesService {
         amount: pb.totalAmount,
       });
     }
-
-    return {
-      message:
-        dto.method === PaymentMethod.BANK_TRANSFER
-          ? 'Bank transfer initiated for every child booking'
-          : 'Cash payment recorded for every child booking — awaiting provider confirmation',
-      data: results,
-    };
+    return { message: 'Bank transfer confirmed — booking is now in progress', data: paid };
   }
+
+  // CASH — يبقى PROCESSING بانتظار تأكيد صاحب الباقة
+  const processing = await this.prisma.payment.update({
+    where: { id: pb.payment.id },
+    data: { method: dto.method, status: PaymentStatus.PROCESSING },
+  });
+
+  this.domainEventBus.packagePaymentCashChosen({
+    actorId: userId,
+    targetUserId: pb.package.provider.user.id,
+    entityId: packageEventBookingId,
+    packageId: pb.packageId,
+    packageName: pb.package.name,
+    packageEventBookingId,
+    amount: pb.totalAmount,
+  });
+
+  return {
+    message: 'Booking confirmed — payment will be confirmed once you hand cash to the package owner',
+    data: processing,
+  };
+}
+
+private async getPackagePartnerUserIds(packageId: string): Promise<string[]> {
+  const rows = await this.prisma.packageService.findMany({
+    where: { packageId, status: 'ACTIVE' },
+    include: { provider: { select: { userId: true } } },
+  });
+  return [...new Set(rows.map((r) => r.provider.userId))];
+}
+
+private async progressPackageToInProgress(packageEventBookingId: string) {
+  const pb = await this.prisma.packageEventBooking.findUnique({
+    where: { id: packageEventBookingId },
+    select: { eventId: true },
+  });
+  await this.prisma.$transaction(async (tx) => {
+    await tx.packageEventBooking.update({
+      where: { id: packageEventBookingId },
+      data: { status: 'IN_PROGRESS' },
+    });
+    await tx.booking.updateMany({
+      where: { packageEventBookingId, status: 'CONFIRMED' },
+      data: { status: 'IN_PROGRESS', acceptedAt: new Date() },
+    });
+    if (pb?.eventId) {
+      await tx.event.update({ where: { id: pb.eventId }, data: { status: 'IN_PROGRESS' } });
+    }
+  });
+}
 
   // ════════════════════════════════════════════════════════════════════
   // Progression — called by PaymentsService.markPaid and the cron jobs.

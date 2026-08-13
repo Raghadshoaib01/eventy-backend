@@ -4,36 +4,32 @@ import { Cron } from '@nestjs/schedule';
 import { PackageEventBookingStatus, PaymentStatus } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
-import {
-  PACKAGE_JOIN_TIMEOUT_HOURS,
-  PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS,
-  PACKAGE_PAYMENT_TIMEOUT_HOURS,
-} from './packages.constants';
 
 /**
- * Three cron jobs (docs/implementation_plan.md §5):
+ * ثلاث مهام cron لباقات المزود (packagesNewPlan.txt §21, §8, §9):
  *
- *   1. Expire pending package join requests (24h).
- *   2. Expire pending package event bookings (48h).
- *   3. Expire unpaid confirmed package bookings (24h).
+ *   1. انتهاء طلبات الانضمام المعلّقة (24h) → PACKAGE_JOIN_EXPIRED
+ *   2. انتهاء طلبات الحجز المعلّقة (48h)   → PACKAGE_BOOKING_EXPIRED
+ *   3. انتهاء مهلة الدفع (24h)              → PACKAGE_PAYMENT_EXPIRED
  *
- * Runs every 15 minutes — the deadline fields are the single source of
- * truth (mirrors `booking-cleanup.service.ts` pattern).
+ * تعتمد على حقلَي pendingExpiresAt / paymentExpiresAt المخزَّنين على
+ * PackageEventBooking نفسه (بدل حساب المهلة من createdAt/updatedAt في كل
+ * تشغيل)، بنفس نمط Booking.cancellationDeadline في booking-cleanup.service.ts.
+ *
+ * أما طلبات الانضمام (PackageService) فلا يوجد بها حقل deadline مخزَّن —
+ * تُقاس من createdAt لأنها لا تتحدّث بعد الإنشاء إلا عند القبول/الرفض
+ * (فلا خطر تزاحم كما في الحجوزات).
  */
 @Injectable()
 export class PackagesCronService {
   private readonly logger = new Logger(PackagesCronService.name);
+  private readonly JOIN_REQUEST_TIMEOUT_HOURS = 24;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventBus: DomainEventBus,
   ) {}
 
-  /**
-   * Master cron — runs every 15 minutes and dispatches to each sub-job.
-   * Splitting them into separate `@Cron` calls would just multiply
-   * schedule overhead with no benefit; they share the same DB connection.
-   */
   @Cron('*/15 * * * *')
   async handlePackageCron(): Promise<void> {
     await Promise.all([
@@ -43,21 +39,19 @@ export class PackagesCronService {
     ]);
   }
 
-  /** 1. Join-request expiry — flips stale PENDING_PROVIDER_APPROVAL to REJECTED. */
+  /** 1. انتهاء طلبات الانضمام (24h) — PENDING_PROVIDER_APPROVAL → REJECTED */
   private async expirePendingJoinRequests(): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - PACKAGE_JOIN_TIMEOUT_HOURS * 60 * 60 * 1000,
-    );
+    const cutoff = new Date(Date.now() - this.JOIN_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000);
 
-    // No rows in the current single-provider-only mode, but the cron
-    // exists for forward compatibility when cross-provider joins are
-    // re-enabled.
     const stale = await this.prisma.packageService.findMany({
       where: {
         status: 'PENDING_PROVIDER_APPROVAL',
         createdAt: { lt: cutoff },
       },
-      include: { package: { include: { provider: { include: { user: true } } } } },
+      include: {
+        package: { include: { provider: { include: { user: true } } } },
+        provider: { include: { user: true } },
+      },
     });
 
     for (const ps of stale) {
@@ -65,28 +59,37 @@ export class PackagesCronService {
         where: { id: ps.id },
         data: { status: 'REJECTED' },
       });
-      this.domainEventBus.packageJoinRejected({
+
+      // إشعار صاحب الباقة
+      this.domainEventBus.packageJoinExpired({
         actorId: 'SYSTEM',
         targetUserId: ps.package.provider.user.id,
-        entityId: ps.id,
+        entityId: ps.packageId,
         packageId: ps.packageId,
         packageName: ps.package.name,
-        partnerProviderName: '',
-        rejectionReason: 'Join request expired (24h timeout)',
       });
+
+      // إشعار المزود الشريك الذي انتهت مهلته
+      this.domainEventBus.packageJoinExpired({
+        actorId: 'SYSTEM',
+        targetUserId: ps.provider.user.id,
+        entityId: ps.packageId,
+        packageId: ps.packageId,
+        packageName: ps.package.name,
+      });
+    }
+
+    if (stale.length) {
+      this.logger.log(`Auto-expired ${stale.length} pending join request(s)`);
     }
   }
 
-  /** 2. PENDING package-event-booking expiry (48h). */
+  /** 2. انتهاء طلبات الحجز المعلّقة (48h) — PENDING → EXPIRED */
   private async expirePendingPackageBookings(): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000,
-    );
-
     const stale = await this.prisma.packageEventBooking.findMany({
       where: {
         status: PackageEventBookingStatus.PENDING,
-        createdAt: { lt: cutoff },
+        pendingExpiresAt: { lt: new Date() },
       },
       include: {
         package: { include: { provider: { include: { user: true } } } },
@@ -101,10 +104,7 @@ export class PackagesCronService {
           data: { status: PackageEventBookingStatus.EXPIRED },
         });
         await tx.booking.updateMany({
-          where: {
-            packageEventBookingId: pb.id,
-            status: { in: ['PENDING', 'CONFIRMED'] },
-          },
+          where: { packageEventBookingId: pb.id, status: { in: ['PENDING', 'CONFIRMED'] } },
           data: {
             status: 'CANCELLED',
             cancelledAt: new Date(),
@@ -114,7 +114,7 @@ export class PackagesCronService {
         });
       });
 
-      this.domainEventBus.packageBookingPaymentExpired({
+      this.domainEventBus.packageBookingExpired({
         actorId: 'SYSTEM',
         targetUserId: pb.customerId,
         entityId: pb.id,
@@ -122,7 +122,7 @@ export class PackagesCronService {
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
       });
-      this.domainEventBus.packageBookingPaymentExpired({
+      this.domainEventBus.packageBookingExpired({
         actorId: 'SYSTEM',
         targetUserId: pb.package.provider.user.id,
         entityId: pb.id,
@@ -137,47 +137,31 @@ export class PackagesCronService {
     }
   }
 
-  /** 3. Unpaid confirmed package booking expiry (24h). */
+  /** 3. انتهاء مهلة الدفع (24h) — PENDING_PAYMENT → CANCELLED */
   private async expireUnpaidPackageBookings(): Promise<void> {
-    const cutoff = new Date(
-      Date.now() - PACKAGE_PAYMENT_TIMEOUT_HOURS * 60 * 60 * 1000,
-    );
-
     const stale = await this.prisma.packageEventBooking.findMany({
       where: {
-        status: {
-          in: [
-            PackageEventBookingStatus.PENDING_PAYMENT,
-            PackageEventBookingStatus.CONFIRMED,
-          ],
-        },
-        updatedAt: { lt: cutoff },
+        status: PackageEventBookingStatus.PENDING_PAYMENT,
+        paymentExpiresAt: { lt: new Date() },
       },
       include: {
         package: { include: { provider: { include: { user: true } } } },
         customer: true,
-        bookings: { include: { payment: true } },
+        payment: true,
       },
     });
 
     for (const pb of stale) {
-      // Skip package bookings that already have at least one PAID payment
-      // (defensive — the customer may have partially paid).
-      const anyPaid = pb.bookings.some(
-        (b) => b.payment?.status === PaymentStatus.PAID,
-      );
-      if (anyPaid) continue;
+      // تجاهل احتياطي إن كان الدفع تم فعلاً (سباق نادر)
+      if (pb.payment?.status === PaymentStatus.PAID) continue;
 
       await this.prisma.$transaction(async (tx) => {
         await tx.packageEventBooking.update({
           where: { id: pb.id },
-          data: { status: PackageEventBookingStatus.EXPIRED },
+          data: { status: PackageEventBookingStatus.CANCELLED },
         });
         await tx.booking.updateMany({
-          where: {
-            packageEventBookingId: pb.id,
-            status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] },
-          },
+          where: { packageEventBookingId: pb.id, status: { in: ['PENDING', 'CONFIRMED', 'IN_PROGRESS'] } },
           data: {
             status: 'CANCELLED',
             cancelledAt: new Date(),
@@ -185,16 +169,15 @@ export class PackagesCronService {
             cancellationReason: 'Package booking expired before payment (24h timeout)',
           },
         });
-        await tx.payment.updateMany({
-          where: {
-            bookingId: { in: pb.bookings.map((b) => b.id) },
-            status: { in: [PaymentStatus.PENDING, PaymentStatus.PROCESSING] },
-          },
-          data: { status: PaymentStatus.CANCELLED },
-        });
+        if (pb.payment && pb.payment.status !== PaymentStatus.PAID) {
+          await tx.payment.update({
+            where: { id: pb.payment.id },
+            data: { status: PaymentStatus.CANCELLED },
+          });
+        }
       });
 
-      this.domainEventBus.packageBookingPaymentExpired({
+      this.domainEventBus.packagePaymentExpired({
         actorId: 'SYSTEM',
         targetUserId: pb.customerId,
         entityId: pb.id,
@@ -202,7 +185,7 @@ export class PackagesCronService {
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
       });
-      this.domainEventBus.packageBookingPaymentExpired({
+      this.domainEventBus.packagePaymentExpired({
         actorId: 'SYSTEM',
         targetUserId: pb.package.provider.user.id,
         entityId: pb.id,

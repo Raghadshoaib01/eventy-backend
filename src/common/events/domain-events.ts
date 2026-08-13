@@ -49,7 +49,10 @@ export const DomainEvents = {
   PACKAGE_BOOKING_REJECTED: 'package.booking.rejected',
   PACKAGE_PAYMENT_CASH_CHOSEN: 'package.payment.cash.chosen',
   PACKAGE_PAYMENT_CONFIRMED: 'package.payment.confirmed',
-  PACKAGE_BOOKING_PAYMENT_EXPIRED: 'package.booking.payment.expired',
+
+  PACKAGE_JOIN_EXPIRED: 'package.join.expired',
+  PACKAGE_BOOKING_EXPIRED: 'package.booking.expired',
+  PACKAGE_PAYMENT_EXPIRED: 'package.payment.expired',
 
   // Discount
   DISCOUNT_CANCELLED: 'discount.cancelled',
@@ -250,7 +253,18 @@ export interface PackagePaymentConfirmedPayload extends BaseDomainEventPayload {
   amount?: number;
 }
 
-export interface PackageBookingPaymentExpiredPayload extends BaseDomainEventPayload {
+export interface PackageJoinExpiredPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+}
+
+export interface PackageBookingExpiredPayload extends BaseDomainEventPayload {
+  packageId: string;
+  packageName: string;
+  packageEventBookingId: string;
+}
+
+export interface PackagePaymentExpiredPayload extends BaseDomainEventPayload {
   packageId: string;
   packageName: string;
   packageEventBookingId: string;

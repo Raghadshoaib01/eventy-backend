@@ -31,12 +31,14 @@ import {
   PackageBookingRejectedPayload,
   PackagePaymentCashChosenPayload,
   PackagePaymentConfirmedPayload,
-  PackageBookingPaymentExpiredPayload,
   DiscountCancelledPayload,
   ReviewRepliedPayload,
   ComplaintStatusChangedPayload,
   ComplaintRepliedPayload,
   DeliveryStatusChangedPayload,
+  PackageJoinExpiredPayload,
+  PackageBookingExpiredPayload,
+  PackagePaymentExpiredPayload,
 } from './domain-events';
 
 /**
@@ -173,10 +175,16 @@ export class DomainEventBus {
     this.emitter.emit(DomainEvents.PACKAGE_PAYMENT_CONFIRMED, payload);
   }
 
-  packageBookingPaymentExpired(payload: PackageBookingPaymentExpiredPayload): void {
-    this.emitter.emit(DomainEvents.PACKAGE_BOOKING_PAYMENT_EXPIRED, payload);
-  }
 
+  packageJoinExpired(payload: PackageJoinExpiredPayload): void {
+  this.emitter.emit(DomainEvents.PACKAGE_JOIN_EXPIRED, payload);
+}
+packageBookingExpired(payload: PackageBookingExpiredPayload): void {
+  this.emitter.emit(DomainEvents.PACKAGE_BOOKING_EXPIRED, payload);
+}
+packagePaymentExpired(payload: PackagePaymentExpiredPayload): void {
+  this.emitter.emit(DomainEvents.PACKAGE_PAYMENT_EXPIRED, payload);
+}
   // ── Discount ──────────────────────────────────────────────
 
   discountCancelled(payload: DiscountCancelledPayload): void {

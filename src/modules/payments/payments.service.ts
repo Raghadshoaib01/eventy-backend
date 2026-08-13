@@ -167,7 +167,8 @@ export class PaymentsService {
     if (payment.method !== PaymentMethod.CASH) {
       throw new BadRequestException('Only cash payments can be confirmed this way');
     }
-    if (payment.status !== PaymentStatus.PROCESSING) {
+    const confirmableStatuses: PaymentStatus[] = [PaymentStatus.PENDING, PaymentStatus.PROCESSING];
+    if (!confirmableStatuses.includes(payment.status)) {
       throw new BadRequestException(`Payment cannot be confirmed while it is ${payment.status}`);
     }
 

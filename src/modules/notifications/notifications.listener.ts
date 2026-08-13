@@ -29,7 +29,6 @@ import {
   PackageBookingRejectedPayload,
   PackagePaymentCashChosenPayload,
   PackagePaymentConfirmedPayload,
-  PackageBookingPaymentExpiredPayload,
   DiscountCancelledPayload,
   ReviewRepliedPayload,
   ComplaintStatusChangedPayload,
@@ -38,6 +37,9 @@ import {
   UserBlockedPayload,
   UserUnblockedPayload,
   UserVerifiedPayload,
+  PackageJoinExpiredPayload,
+  PackageBookingExpiredPayload,
+  PackagePaymentExpiredPayload,
 } from 'src/common/events/domain-events';
 import { NotificationsService } from './notifications.service';
 
@@ -570,23 +572,38 @@ export class NotificationsListener {
     });
   }
 
-  @OnEvent(DomainEvents.PACKAGE_BOOKING_PAYMENT_EXPIRED, { async: true })
-  async handlePackageBookingPaymentExpired(payload: PackageBookingPaymentExpiredPayload): Promise<void> {
-    await this.deliver({
-      userId: payload.targetUserId,
-      type: NotificationType.PACKAGE_BOOKING_PAYMENT_EXPIRED,
-      title: 'Payment Window Expired',
-      body: `The payment window for "${payload.packageName}" has expired and the booking was cancelled.`,
-      metadata: {
-        screen: 'package-booking-details',
-        packageId: payload.packageId,
-        packageEventBookingId: payload.packageEventBookingId,
-        targetUserId: payload.targetUserId,
-        actorUserId: payload.actorId,
-        packageName: payload.packageName,
-      },
-    });
-  }
+  @OnEvent(DomainEvents.PACKAGE_JOIN_EXPIRED, { async: true })
+async handlePackageJoinExpired(payload: PackageJoinExpiredPayload): Promise<void> {
+  await this.deliver({
+    userId: payload.targetUserId,
+    type: NotificationType.PACKAGE_JOIN_EXPIRED,
+    title: 'Join Request Expired',
+    body: `The join request for "${payload.packageName}" expired after 24 hours without a response.`,
+    metadata: { screen: 'package-details', packageId: payload.packageId, actorUserId: payload.actorId },
+  });
+}
+
+@OnEvent(DomainEvents.PACKAGE_BOOKING_EXPIRED, { async: true })
+async handlePackageBookingExpired(payload: PackageBookingExpiredPayload): Promise<void> {
+  await this.deliver({
+    userId: payload.targetUserId,
+    type: NotificationType.PACKAGE_BOOKING_EXPIRED,
+    title: 'Package Booking Request Expired',
+    body: `The booking request for "${payload.packageName}" expired after 48 hours without a response.`,
+    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId },
+  });
+}
+
+@OnEvent(DomainEvents.PACKAGE_PAYMENT_EXPIRED, { async: true })
+async handlePackagePaymentExpired(payload: PackagePaymentExpiredPayload): Promise<void> {
+  await this.deliver({
+    userId: payload.targetUserId,
+    type: NotificationType.PACKAGE_PAYMENT_EXPIRED,
+    title: 'Payment Window Expired',
+    body: `The payment window for "${payload.packageName}" expired and the booking was cancelled.`,
+    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId },
+  });
+}
 
   // ─────────────────────────────────────────────────────────────
   // DISCOUNT EVENTS (docs/discounts-implementation-plan.md §7)

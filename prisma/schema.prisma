@@ -66,6 +66,10 @@ enum NotificationType {
   PACKAGE_PAYMENT_CONFIRMED
   PACKAGE_BOOKING_PAYMENT_EXPIRED
 
+  PACKAGE_JOIN_EXPIRED
+  PACKAGE_BOOKING_EXPIRED
+  PACKAGE_PAYMENT_EXPIRED
+
   // Discounts (docs/discounts-implementation-plan.md §7)
   DISCOUNT_CANCELLED
 
@@ -804,6 +808,8 @@ model PackageEventBooking {
   event      Event?                    @relation(fields: [eventId], references: [id], onDelete: SetNull)
   status     PackageEventBookingStatus @default(PENDING)
   totalAmount Float                    @default(0)
+  pendingExpiresAt DateTime?
+  paymentExpiresAt DateTime?
 
   bookings Booking[]
   payment  Payment?

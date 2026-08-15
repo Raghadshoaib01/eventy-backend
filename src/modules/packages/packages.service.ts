@@ -6,7 +6,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, PaymentMethod, PaymentStatus, Discount, PackageEventBookingStatus } from '@prisma/client';
+import { Prisma, PaymentMethod, PaymentStatus, Discount, PackageEventBookingStatus,NotificationType } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DiscountsService } from '../discounts/discounts.service';
@@ -20,28 +20,17 @@ import {
   PACKAGE_PAYMENT_TIMEOUT_HOURS,
 } from './packages.constants';
 import { PackageBookingQueryDto } from './dto/package-booking-query.dto';
+import { rangesOverlap } from 'src/common/helpers/time.helper';
+import { NotificationsService } from '../notifications/notifications.service';
 
-/**
- * PackagesService — Provider Packages + Customer Exclusive-package flow
- * (docs/implementation_plan.md).
- *
- * Architectural choices (per implementation_plan.md §6 — Option A):
- *  - One Payment per child Booking. There is NO aggregated package payment.
- *    Payment.bookings remain the truth. `PackageEventBooking.totalAmount` is a
- *    convenience cache of the sum of child booking totals.
- *  - Event.status stays in its existing enum (no PENDING added). A package
- *    booking creates an Event in DRAFT, transitioning to IN_PROGRESS only
- *    when the package booking has reached `tryProgressPackageBooking`'s
- *    "all child bookings paid or terminal" condition.
- *  - `Booking.packageEventBookingId` is the join between a child booking and
- *    its parent PackageEventBooking.
- */
+
 @Injectable()
 export class PackagesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly domainEventBus: DomainEventBus,
     private readonly discountsService: DiscountsService,
+    private readonly notificationsService: NotificationsService, 
   ) {}
 
   // ─── helpers ────────────────────────────────────────────────────────
@@ -89,7 +78,102 @@ export class PackagesService {
 
     return pb;
   }
+// أعلى الملف
+// تأكد أن ConflictException موجودة ضمن استيراد @nestjs/common الحالي
 
+private async assertNoBlockedSlotsForPackage(
+  services: { serviceId: string; providerId: string }[],
+  eventDate: Date,
+  eventStartTime: string,
+  eventEndTime: string,
+) {
+  const startOfDay = new Date(eventDate); startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(eventDate); endOfDay.setHours(23, 59, 59, 999);
+
+  const providerIds = [...new Set(services.map((s) => s.providerId))];
+  const serviceIds = services.map((s) => s.serviceId);
+
+  const blocks = await this.prisma.blockedSlot.findMany({
+    where: {
+      providerId: { in: providerIds },
+      date: { gte: startOfDay, lte: endOfDay },
+      OR: [{ serviceId: { in: serviceIds } }, { serviceId: null }],
+    },
+  });
+
+  for (const svc of services) {
+    const relevant = blocks.filter(
+      (b) => b.providerId === svc.providerId && (b.serviceId === svc.serviceId || b.serviceId === null),
+    );
+    const isBlocked = relevant.some((b) => {
+      if (!b.fromTime || !b.toTime) return true; // حجب اليوم بالكامل
+      return rangesOverlap(eventStartTime, eventEndTime, b.fromTime, b.toTime);
+    });
+    if (isBlocked) {
+      throw new ConflictException(
+        'One of the package providers is unavailable at the requested time on this date',
+      );
+    }
+  }
+}
+
+private async assertOwnerHasPackagedHallAmong(ownerProviderId: string, serviceIds: string[]) {
+  const hall = await this.prisma.service.findFirst({
+    where: {
+      id: { in: serviceIds },
+      providerId: ownerProviderId,
+      isPackaged: true,
+      serviceType: { name: 'HALL' },
+    },
+  });
+  if (!hall) {
+    throw new BadRequestException(
+      'The package must include your own Hall service with isPackaged=true among its services',
+    );
+  }
+}
+
+private async assertNoDuplicatePackageServiceSet(serviceIds: string[], excludePackageId?: string) {
+  const sortedIds = [...serviceIds].sort();
+  const candidateDupes = await this.prisma.package.findMany({
+    where: {
+      status: { not: 'CANCELLED' },
+      ...(excludePackageId && { id: { not: excludePackageId } }),
+      services: { some: { serviceId: { in: serviceIds } } },
+    },
+    include: { services: { select: { serviceId: true } } },
+  });
+  const hasDuplicateSet = candidateDupes.some((p) => {
+    const existingIds = p.services.map((s) => s.serviceId).sort();
+    return (
+      existingIds.length === sortedIds.length &&
+      existingIds.every((id, i) => id === sortedIds[i])
+    );
+  });
+  if (hasDuplicateSet) {
+    throw new BadRequestException('A package with the exact same set of services already exists');
+  }
+}
+
+private async assertCommonTimeWindow(serviceIds: string[]) {
+  const availabilities = await this.prisma.serviceAvailability.findMany({
+    where: { serviceId: { in: serviceIds } },
+    include: { workingDays: true },
+  });
+  const dayScopeByService = new Map<string, Set<string>>();
+  for (const avail of availabilities) {
+    const set = dayScopeByService.get(avail.serviceId) ?? new Set<string>();
+    avail.workingDays.forEach((d) => set.add(d.dayOfWeek));
+    dayScopeByService.set(avail.serviceId, set);
+  }
+  const allDaySets = serviceIds.map((id) => dayScopeByService.get(id) ?? new Set<string>());
+  const commonDays = [...(allDaySets[0] ?? [])].filter((day) =>
+    allDaySets.every((set) => set.has(day)),
+  );
+  if (commonDays.length === 0) {
+    throw new BadRequestException('The selected services have no common available day/time window');
+  }
+}
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package authoring
   // ════════════════════════════════════════════════════════════════════
@@ -121,15 +205,17 @@ async createPackage(userId: string, dto: CreatePackageDto) {
   }
 
  // 2) يجب أن تكون إحدى الخدمات المُرسلة نفسها Hall مملوكة للمزود الحالي وبـ isPackaged = true
-const ownedPackagedHall = services.find(
-  (s) => s.providerId === provider.id && s.serviceType.name === 'HALL' && s.isPackaged,
-);
-if (!ownedPackagedHall) {
-  throw new BadRequestException(
-    'The package must include your own Hall service with isPackaged=true among the submitted services',
+await this.assertOwnerHasPackagedHallAmong(provider.id, serviceIds);
+/*
+  const ownedPackagedHall = services.find(
+    (s) => s.providerId === provider.id && s.serviceType.name === 'HALL' && s.isPackaged,
   );
-}
-
+  if (!ownedPackagedHall) {
+    throw new BadRequestException(
+      'The package must include your own Hall service with isPackaged=true among the submitted services',
+    );
+  }
+*/
   // 3) خدمتين على الأقل
   if (serviceIds.length < 2) {
     throw new BadRequestException('A package requires at least 2 services');
@@ -153,6 +239,8 @@ if (!ownedPackagedHall) {
   }
 
   // 5) وقت مشترك بين جميع خدمات الباقة (تقاطع أيام العمل على الأقل)
+  
+  /*
   const availabilities = await this.prisma.serviceAvailability.findMany({
     where: { serviceId: { in: serviceIds } },
     include: { workingDays: true },
@@ -170,7 +258,10 @@ if (!ownedPackagedHall) {
   if (commonDays.length === 0) {
     throw new BadRequestException('The selected services have no common available day/time window');
   }
+*/
+await this.assertNoDuplicatePackageServiceSet(serviceIds);
 
+await this.assertCommonTimeWindow(serviceIds);
   // 6) الإنشاء + تحديد الحالة حسب المالك
   const packageRow = await this.prisma.$transaction(async (tx) => {
     const created = await tx.package.create({
@@ -228,27 +319,170 @@ if (!ownedPackagedHall) {
    * `PATCH /api/v1/packages/:id`
    * Update name/description/discount while the package is DRAFT.
    */
-  async updatePackage(userId: string, packageId: string, dto: UpdatePackageDto) {
-    const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
-    if (pkg.status !== 'DRAFT') {
-      throw new BadRequestException(
-        `Package can only be edited while DRAFT (current status: ${pkg.status})`,
-      );
-    }
+async updatePackage(userId: string, packageId: string, dto: UpdatePackageDto) {
+  const provider = await this.resolveProvider(userId);
+  const pkg = await this.getOwnedPackageOrThrow(userId, packageId);
+  if (pkg.status !== 'DRAFT') {
+    throw new BadRequestException(
+      `Package can only be edited while DRAFT (current status: ${pkg.status})`,
+    );
+  }
 
-    const updated = await this.prisma.package.update({
+  const currentServices = await this.prisma.packageService.findMany({
+    where: { packageId },
+    include: {
+      service: { include: { serviceType: { select: { name: true } } } },
+      provider: { select: { userId: true, businessName: true } },
+    },
+  });
+
+  const addIds = [...new Set(dto.addServiceIds ?? [])];
+  const removeIds = [...new Set(dto.removeServiceIds ?? [])];
+
+  const overlap = addIds.filter((id) => removeIds.includes(id));
+  if (overlap.length > 0) {
+    throw new BadRequestException(`Cannot add and remove the same service in one request: ${overlap.join(', ')}`);
+  }
+
+  const currentIds = new Set(currentServices.map((s) => s.serviceId));
+  const invalidRemovals = removeIds.filter((id) => !currentIds.has(id));
+  if (invalidRemovals.length > 0) {
+    throw new BadRequestException(`These services are not part of the package: ${invalidRemovals.join(', ')}`);
+  }
+  const invalidAdditions = addIds.filter((id) => currentIds.has(id));
+  if (invalidAdditions.length > 0) {
+    throw new BadRequestException(`These services are already part of the package: ${invalidAdditions.join(', ')}`);
+  }
+
+  const ownerHall = currentServices.find(
+    (s) => s.providerId === provider.id && s.service.serviceType.name === 'HALL' && s.service.isPackaged,
+  );
+  if (ownerHall && removeIds.includes(ownerHall.serviceId)) {
+    throw new BadRequestException('Cannot remove your own packaged Hall service — it is the foundation of the package');
+  }
+
+  const finalServiceIds = [...currentIds].filter((id) => !removeIds.includes(id));
+  finalServiceIds.push(...addIds);
+
+  if (finalServiceIds.length === 0) {
+    throw new BadRequestException(
+      'Cannot remove all services without adding replacements — the package must retain at least one service',
+    );
+  }
+
+  let addedServices: { id: string; providerId: string; serviceType: { name: string } }[] = [];
+  if (addIds.length > 0) {
+    addedServices = await this.prisma.service.findMany({
+      where: { id: { in: addIds }, approvalStatus: 'ACTIVE' },
+      select: { id: true, providerId: true, serviceType: { select: { name: true } } },
+    });
+    if (addedServices.length !== addIds.length) {
+      const found = new Set(addedServices.map((s) => s.id));
+      const missing = addIds.filter((id) => !found.has(id));
+      throw new BadRequestException(`Services not found or not active: ${missing.join(', ')}`);
+    }
+  }
+
+  const servicesChanged = addIds.length > 0 || removeIds.length > 0;
+  if (servicesChanged) {
+    if (finalServiceIds.length < 2) {
+      throw new BadRequestException('A package requires at least 2 services');
+    }
+    await this.assertOwnerHasPackagedHallAmong(provider.id, finalServiceIds);
+    await this.assertNoDuplicatePackageServiceSet(finalServiceIds, packageId);
+    await this.assertCommonTimeWindow(finalServiceIds);
+  }
+
+  const discountChanging =
+    dto.discountPercentage !== undefined && dto.discountPercentage !== pkg.discountPercentage;
+
+  await this.prisma.$transaction(async (tx) => {
+    await tx.package.update({
       where: { id: packageId },
       data: {
         ...(dto.name !== undefined && { name: dto.name }),
         ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.discountPercentage !== undefined && {
-          discountPercentage: dto.discountPercentage,
-        }),
+        ...(dto.discountPercentage !== undefined && { discountPercentage: dto.discountPercentage }),
       },
     });
 
-    return { message: 'Package updated', data: updated };
+    if (removeIds.length > 0) {
+      await tx.packageService.deleteMany({ where: { packageId, serviceId: { in: removeIds } } });
+    }
+
+    if (addedServices.length > 0) {
+      await tx.packageService.createMany({
+        data: addedServices.map((svc) => ({
+          packageId,
+          providerId: svc.providerId,
+          serviceId: svc.id,
+          status: svc.providerId === provider.id ? 'ACTIVE' : 'PENDING_PROVIDER_APPROVAL',
+        })),
+      });
+    }
+
+    if (discountChanging) {
+      await tx.packageService.updateMany({
+        where: { packageId, providerId: { not: provider.id }, serviceId: { notIn: removeIds } },
+        data: { status: 'PENDING_PROVIDER_APPROVAL' },
+      });
+    }
+  });
+
+  // ── إشعارات (بدون أنواع جديدة — نعتمد على PACKAGE_JOIN_REJECTED للحذف، وPACKAGE_JOIN_REQUESTED لطلب الموافقة) ──
+
+  for (const removed of currentServices.filter((s) => removeIds.includes(s.serviceId))) {
+    if (removed.providerId === provider.id) continue;
+    await this.notificationsService.createAndDeliver({
+      userId: removed.provider.userId,
+      type: NotificationType.PACKAGE_JOIN_REJECTED,
+      title: 'Removed From Package',
+      body: `Your service "${removed.service.serviceType.name}" was removed from the package "${pkg.name}" by its owner.`,
+      metadata: { screen: 'package-details', packageId, serviceId: removed.serviceId },
+    });
   }
+
+  for (const svc of addedServices.filter((s) => s.providerId !== provider.id)) {
+    const partnerProvider = await this.prisma.serviceProvider.findUnique({
+      where: { id: svc.providerId },
+      select: { userId: true },
+    });
+    if (!partnerProvider) continue;
+    this.domainEventBus.packageJoinRequested({
+      actorId: userId,
+      targetUserId: partnerProvider.userId,
+      entityId: packageId,
+      packageId,
+      packageName: dto.name ?? pkg.name,
+      ownerProviderName: provider.businessName,
+      serviceName: svc.serviceType.name,
+    });
+  }
+
+  if (discountChanging) {
+    const reconfirmPartners = currentServices.filter(
+      (s) => s.providerId !== provider.id && !removeIds.includes(s.serviceId),
+    );
+    for (const p of reconfirmPartners) {
+      this.domainEventBus.packageJoinRequested({
+        actorId: userId,
+        targetUserId: p.provider.userId,
+        entityId: packageId,
+        packageId,
+        packageName: dto.name ?? pkg.name,
+        ownerProviderName: provider.businessName,
+        serviceName: p.service.serviceType.name,
+      });
+    }
+  }
+
+  const updated = await this.prisma.package.findUnique({
+    where: { id: packageId },
+    include: { services: { include: { service: { include: { serviceType: { select: { name: true } } } } } } },
+  });
+
+  return { message: 'Package updated', data: updated };
+}
 
   /**
    * `GET /api/v1/packages/my-packages`
@@ -985,6 +1219,12 @@ if (existingActive) {
     'You already have an active booking request for this package. Cancel it before creating a new one.',
   );
 }
+await this.assertNoBlockedSlotsForPackage(
+  pkg.services.map((ps) => ({ serviceId: ps.serviceId, providerId: ps.providerId })),
+  new Date(dto.eventDate),
+  dto.eventStartTime,
+  dto.eventEndTime,
+);
     // Resolve PACKAGE-scope discount (auto-applied unless a code is required).
     const pkgDiscount = await this.discountsService.resolveActiveDiscountForPackage(
       pkg.id,

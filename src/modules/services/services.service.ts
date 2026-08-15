@@ -531,19 +531,53 @@ async getServiceById(
       where.provider = { businessName: { contains: search, mode: 'insensitive' } };
     }
 
-    if (date) {
-      const DAY_NAMES = [
-        'SUNDAY','MONDAY','TUESDAY','WEDNESDAY',
-        'THURSDAY','FRIDAY','SATURDAY',
-      ];
-      const dayOfWeek = DAY_NAMES[new Date(date).getDay()];
-      where.availability = {
-        some: { workingDays: { some: { dayOfWeek } } },
-      };
-    }
-
+    
     // ── AND conditions (OR-based filters that must not conflict) ─
     const andConditions: any[] = [];
+
+if (date) {
+  const DAY_NAMES = [
+    'SUNDAY','MONDAY','TUESDAY','WEDNESDAY',
+    'THURSDAY','FRIDAY','SATURDAY',
+  ];
+  const dayOfWeek = DAY_NAMES[new Date(date).getDay()];
+  where.availability = {
+    some: { workingDays: { some: { dayOfWeek } } },
+  };
+
+  // ── استثناء الخدمات المحجوبة (Blocked Slots) في هذا التاريخ ──
+  const MOSTLY_BLOCKED_HOURS = 8;
+  const startOfDay = new Date(date); startOfDay.setHours(0, 0, 0, 0);
+  const endOfDay = new Date(date); endOfDay.setHours(23, 59, 59, 999);
+
+  const blocksOnDate = await this.prisma.blockedSlot.findMany({
+    where: { date: { gte: startOfDay, lte: endOfDay } },
+    select: { serviceId: true, providerId: true, fromTime: true, toTime: true },
+  });
+
+  const isMostlyBlocked = (b: { fromTime: string | null; toTime: string | null }) => {
+    if (!b.fromTime || !b.toTime) return true;
+    const [fh, fm] = b.fromTime.split(':').map(Number);
+    const [th, tm] = b.toTime.split(':').map(Number);
+    const durationHours = (th * 60 + tm - (fh * 60 + fm)) / 60;
+    return durationHours >= MOSTLY_BLOCKED_HOURS;
+  };
+
+  const excludedServiceIds = new Set<string>();
+  const excludedProviderIds = new Set<string>();
+  for (const b of blocksOnDate) {
+    if (!isMostlyBlocked(b)) continue;
+    if (b.serviceId) excludedServiceIds.add(b.serviceId);
+    else excludedProviderIds.add(b.providerId);
+  }
+
+  if (excludedServiceIds.size > 0) {
+    andConditions.push({ id: { notIn: [...excludedServiceIds] } });
+  }
+  if (excludedProviderIds.size > 0) {
+    andConditions.push({ providerId: { notIn: [...excludedProviderIds] } });
+  }
+}
 
     if (guests) {
       andConditions.push({

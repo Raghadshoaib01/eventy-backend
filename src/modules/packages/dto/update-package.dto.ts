@@ -1,6 +1,6 @@
 // src/modules/packages/dto/update-package.dto.ts
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ArrayMinSize, IsArray, IsNumber, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class UpdatePackageDto {
@@ -21,4 +21,18 @@ export class UpdatePackageDto {
   @Min(0)
   @Max(100)
   discountPercentage?: number;
+
+  @ApiPropertyOptional({ type: [String], description: 'Service IDs to add (DRAFT only)' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('all', { each: true })
+  addServiceIds?: string[];
+
+  @ApiPropertyOptional({ type: [String], description: 'Service IDs to remove (DRAFT only)' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsUUID('all', { each: true })
+  removeServiceIds?: string[];
 }

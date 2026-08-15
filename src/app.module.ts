@@ -37,6 +37,7 @@ import { DeliveryModule } from './modules/delivery/delivery.module';
 import { PackagesModule } from './modules/packages/packages.module';
 import { SuggestedPackagesModule } from './modules/suggested-packages/suggested-packages.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BlockedSlotModule } from './modules/blocked-slots/blocked-slots.module';
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     DeliveryModule,
     PackagesModule,
     SuggestedPackagesModule,
+    BlockedSlotModule,
   ],
   controllers: [
     AppController,

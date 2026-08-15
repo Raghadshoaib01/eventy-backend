@@ -254,11 +254,11 @@ export class EventService {
             );
           }
 
-          // 5b. Blocked slot check
           const blockedSlots = await tx.blockedSlot.findMany({
             where: {
-              serviceId: svc.id,
+              providerId: svc.providerId,
               date: { gte: startOfDay, lte: endOfDay },
+              OR: [{ serviceId: svc.id }, { serviceId: null }],
             },
           });
           const isBlocked = blockedSlots.some((b) => {
@@ -713,8 +713,12 @@ export class EventService {
       }
 
       const blockedSlots = await tx.blockedSlot.findMany({
-        where: { serviceId: svc.id, date: { gte: startOfDay, lte: endOfDay } },
-      });
+            where: {
+              providerId: svc.providerId,
+              date: { gte: startOfDay, lte: endOfDay },
+              OR: [{ serviceId: svc.id }, { serviceId: null }],
+            },
+          });
       const isBlocked = blockedSlots.some((b) =>
         !b.fromTime || !b.toTime
           ? true

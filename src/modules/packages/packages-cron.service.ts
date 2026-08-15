@@ -36,8 +36,52 @@ export class PackagesCronService {
       this.expirePendingJoinRequests(),
       this.expirePendingPackageBookings(),
       this.expireUnpaidPackageBookings(),
+      this.completeFinishedPackageBookings(),
     ]);
   }
+
+/** 4. إنهاء تلقائي للحجوزات IN_PROGRESS فور وصول موعد نهاية المناسبة */
+private async completeFinishedPackageBookings(): Promise<void> {
+  const now = new Date();
+  const candidates = await this.prisma.packageEventBooking.findMany({
+    where: { status: PackageEventBookingStatus.IN_PROGRESS, eventId: { not: null } },
+    include: { event: true },
+  });
+
+  let completed = 0;
+  for (const pb of candidates) {
+    if (!pb.event) continue;
+
+    const [endH, endM] = pb.event.eventEndTime.split(':').map(Number);
+    const [startH] = pb.event.eventStartTime.split(':').map(Number);
+    const endsNextDay = endH < startH;
+    const eventEnd = new Date(pb.event.eventDate);
+    eventEnd.setHours(endH, endM, 0, 0);
+    if (endsNextDay) eventEnd.setDate(eventEnd.getDate() + 1);
+
+    if (eventEnd > now) continue; // لم يصل موعد الانتهاء بعد
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.packageEventBooking.update({
+        where: { id: pb.id },
+        data: { status: PackageEventBookingStatus.COMPLETED },
+      });
+      await tx.booking.updateMany({
+        where: { packageEventBookingId: pb.id, status: 'IN_PROGRESS' },
+        data: { status: 'COMPLETED', completedAt: now },
+      });
+      await tx.event.update({
+        where: { id: pb.event!.id },
+        data: { status: 'COMPLETED' },
+      });
+    });
+    completed++;
+  }
+
+  if (completed) {
+    this.logger.log(`Auto-completed ${completed} package booking(s)`);
+  }
+}
 
   /** 1. انتهاء طلبات الانضمام (24h) — PENDING_PROVIDER_APPROVAL → REJECTED */
   private async expirePendingJoinRequests(): Promise<void> {

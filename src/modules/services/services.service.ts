@@ -499,7 +499,7 @@ async getServiceById(
   // ========================
 // src/modules/services/services.service.ts
   async getAvailableServicesByType(dto: AvailableServicesQueryDto) {
-    const { type, date, guests, budget, page = 1, limit = 10 } = dto;
+    const { type, date, guests, budget, page = 1, limit = 10,search } = dto;
     const skip = (page - 1) * limit;
 
     // ── Validation ──────────────────────────────────────────────
@@ -525,6 +525,10 @@ async getServiceById(
     // ── Optional simple filters ──────────────────────────────────
     if (type) {
       where.serviceType = { name: type.toUpperCase() };
+    }
+
+    if (search) {
+      where.provider = { businessName: { contains: search, mode: 'insensitive' } };
     }
 
     if (date) {

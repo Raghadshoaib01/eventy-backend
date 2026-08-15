@@ -54,4 +54,11 @@ export class AvailableServicesQueryDto extends PaginationDto {
   @Min(1)
   budget?: number;
 
+  @ApiPropertyOptional({
+  description: 'Search by provider business name (services have no name of their own). Combines with other filters.',
+})
+@IsOptional()
+@IsString()
+search?: string;
+
 }

@@ -8,6 +8,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Request,
   UseGuards,
 } from '@nestjs/common';
@@ -28,24 +29,12 @@ import { PackageBookingDecisionDto } from './dto/package-booking-decision.dto';
 import { PackageBookingCancelDto } from './dto/package-booking-cancel.dto';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
-import { UserRole } from '@prisma/client';
+import { PackageEventBookingStatus, UserRole } from '@prisma/client';
 import { Audit } from 'src/common/decorators/audit.decorator';
 import { AuditAction } from '@prisma/client';
+import { PackageBookingQueryDto } from './dto/package-booking-query.dto';
 
-/**
- * Swagger organization: endpoints are split into three role-scoped tags
- * instead of one umbrella `Packages` tag:
- *   • `Packages-Provider` — endpoints guarded with `@Roles(UserRole.PROVIDER)`
- *   • `Packages-Customer` — endpoints guarded only with `JwtAuthGuard`
- *     (service-level checks verify the caller is the customer owning the
- *     package booking)
- *   • `Packages-Admin`    — reserved for future admin-curated package
- *     overrides; none are exposed yet.
- *
- * Each handler carries its own `@ApiTags(...)`, so Swagger groups them
- * accordingly. The controller-level tag is intentionally omitted to avoid
- * the previous "everything under one category" layout.
- */
+
 @ApiBearerAuth('JWT-auth')
 @Controller('packages')
 export class PackagesController {
@@ -131,6 +120,32 @@ export class PackagesController {
   ) {
     return this.packagesService.cancelPackageBooking(req.user.sub, id, dto.reason);
   }
+  
+  @Get('my-bookings')
+@ApiTags('Packages-Customer')
+@UseGuards(JwtAuthGuard)
+@ApiOperation({
+  summary: 'Get my package bookings (optionally filtered by status)',
+  description: '**Allowed roles:** the current customer.',
+})
+getMyPackageBookings(@Request() req, @Query() query: PackageBookingQueryDto) {
+  return this.packagesService.getMyPackageBookings(req.user.sub, query);
+}
+
+@Get('bookings')
+@ApiTags('Packages-Provider')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles(UserRole.PROVIDER)
+@ApiOperation({
+  summary: 'Get my package bookings, optionally filtered by status',
+  description:
+    '**Allowed roles:** PROVIDER (package owner only). Omit ?status to get all(PENDING, CONFIRMED, PENDING_PAYMENT, IN_PROGRESS, COMPLETED) together.\n' +
+  '**Filterable statuses:** PENDING, CONFIRMED, PENDING_PAYMENT, IN_PROGRESS, COMPLETED, REJECTED, CANCELLED, EXPIRED.',
+})
+getPackageBookings(@Request() req, @Query('status') status?: PackageEventBookingStatus) {
+  return this.packagesService.getPackageBookings(req.user.sub, status);
+}
+
 
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package authoring & lifecycle
@@ -197,7 +212,8 @@ export class PackagesController {
   @ApiParam({ name: 'id', description: 'Package UUID' })
   @ApiOperation({
     summary: 'Get package details (provider view)',
-    description: '**Allowed roles:** PROVIDER (owner only).',
+    description: 'Use[ GET /api/v1/packages/joined/{id}  Get a joined package details] instead.',
+      deprecated: true,
   })
   getPackage(@Request() req, @Param('id') id: string) {
     return this.packagesService.getPackageForProvider(req.user.sub, id);
@@ -312,7 +328,8 @@ export class PackagesController {
   @Roles(UserRole.PROVIDER)
   @ApiOperation({
     summary: 'Get pending event-package bookings',
-    description: '**Allowed roles:** PROVIDER (package owner only).',
+    description: ' Use GET Get my package bookings, optionally filtered by status.',
+      deprecated: true,
   })
   getPendingPackageBookings(@Request() req) {
     return this.packagesService.getPendingPackageBookings(req.user.sub);
@@ -324,7 +341,8 @@ export class PackagesController {
   @Roles(UserRole.PROVIDER)
   @ApiOperation({
     summary: 'Get bookings waiting for payment confirmation',
-    description: '**Allowed roles:** PROVIDER (package owner only).',
+    description: 'Use GET Get my package bookings, optionally filtered by status.',
+      deprecated: true,
   })
   getPaymentPendingPackageBookings(@Request() req) {
     return this.packagesService.getPaymentPendingPackageBookings(req.user.sub);

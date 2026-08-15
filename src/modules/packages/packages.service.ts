@@ -1,11 +1,12 @@
 // src/modules/packages/packages.service.ts
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, PaymentMethod, PaymentStatus, Discount } from '@prisma/client';
+import { Prisma, PaymentMethod, PaymentStatus, Discount, PackageEventBookingStatus } from '@prisma/client';
 import { PrismaService } from 'src/database/prisma.service';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
 import { DiscountsService } from '../discounts/discounts.service';
@@ -18,6 +19,7 @@ import {
   PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS,
   PACKAGE_PAYMENT_TIMEOUT_HOURS,
 } from './packages.constants';
+import { PackageBookingQueryDto } from './dto/package-booking-query.dto';
 
 /**
  * PackagesService — Provider Packages + Customer Exclusive-package flow
@@ -110,7 +112,7 @@ async createPackage(userId: string, dto: CreatePackageDto) {
     where: { id: { in: serviceIds }, approvalStatus: 'ACTIVE'
     //, deletedAt: null 
   },
-    select: { id: true, providerId: true, serviceType: { select: { name: true } } },
+    select: { id: true, providerId: true, isPackaged: true, serviceType: { select: { name: true } } },
   });
   if (services.length !== serviceIds.length) {
     const found = new Set(services.map((s) => s.id));
@@ -118,19 +120,15 @@ async createPackage(userId: string, dto: CreatePackageDto) {
     throw new BadRequestException(`Services not found or not active: ${missing.join(', ')}`);
   }
 
-  // 2) يجب أن يملك المزود الحالي خدمة HALL بـ isPackaged = true
-  const ownsPackagedHall = await this.prisma.service.findFirst({
-    where: {
-      providerId: provider.id,
-      isPackaged: true,
-      serviceType: { name: 'HALL' },
-    },
-  });
-  if (!ownsPackagedHall) {
-    throw new BadRequestException(
-      'You must own a Hall service with isPackaged=true before creating a package',
-    );
-  }
+ // 2) يجب أن تكون إحدى الخدمات المُرسلة نفسها Hall مملوكة للمزود الحالي وبـ isPackaged = true
+const ownedPackagedHall = services.find(
+  (s) => s.providerId === provider.id && s.serviceType.name === 'HALL' && s.isPackaged,
+);
+if (!ownedPackagedHall) {
+  throw new BadRequestException(
+    'The package must include your own Hall service with isPackaged=true among the submitted services',
+  );
+}
 
   // 3) خدمتين على الأقل
   if (serviceIds.length < 2) {
@@ -436,49 +434,96 @@ async rejectJoinRequest(userId: string, packageId: string) {
 
   return { message: 'Join request rejected', data: { packageId, status: 'REJECTED' } };
 }
+
 async getJoinedPackages(userId: string) {
   const provider = await this.resolveProvider(userId);
+
   const rows = await this.prisma.packageService.findMany({
     where: { providerId: provider.id, status: 'ACTIVE' },
-    include: {
-      package: {
-        select: {
-          id: true,
-          name: true,
-          description: true,
-          discountPercentage: true,
-          status: true,
-          provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true } } } },
-        },
-      },
+    select: { packageId: true },
+    distinct: ['packageId'],
+  });
+  const packageIds = rows.map((r) => r.packageId);
+  if (packageIds.length === 0) {
+    return { message: 'Joined packages retrieved successfully', data: [] };
+  }
+
+  const packages = await this.prisma.package.findMany({
+    where: { id: { in: packageIds } },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      discountPercentage: true,
+      status: true,
+      provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true } } } },
     },
     orderBy: { createdAt: 'desc' },
   });
+
+  return { message: 'Joined packages retrieved successfully', data: packages };
+}
+
+async getMyPackageBookings(userId: string, query: PackageBookingQueryDto) {
+  const { page = 1, limit = 10, status } = query;
+  const skip = (page - 1) * limit;
+  const where: any = { customerId: userId, ...(status && { status }) };
+
+  const [items, total] = await this.prisma.$transaction([
+    this.prisma.packageEventBooking.findMany({
+      where,
+      skip,
+      take: limit,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        package: { select: { id: true, name: true, description: true, discountPercentage: true } },
+        event: { select: { name: true, eventDate: true, eventLocation: true } },
+        payment: true,
+      },
+    }),
+    this.prisma.packageEventBooking.count({ where }),
+  ]);
+
   return {
-    message: 'Joined packages retrieved successfully',
-    data: rows.map((r) => r.package),
+    message: 'Package bookings retrieved successfully',
+    data: { items, meta: { total, page, limit, totalPages: Math.ceil(total / limit) } },
   };
 }
 
-async getJoinedPackageDetails(userId: string, packageId: string) {
-  const provider = await this.resolveProvider(userId);
-  const membership = await this.prisma.packageService.findFirst({
-    where: { packageId, providerId: provider.id, status: 'ACTIVE' },
-  });
-  if (!membership) throw new NotFoundException('You are not an active partner in this package');
 
-  const pkg = await this.prisma.package.findUnique({
-    where: { id: packageId },
-    include: {
-      provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true, phoneNumber: true } } } },
-      services: {
-        where: { status: 'ACTIVE' },
-        include: { service: { include: { serviceType: { select: { name: true } }, files: { take: 1 } } } },
-      },
-    },
-  });
-  return { message: 'Joined package details retrieved', data: pkg };
+async getJoinedPackageDetails(userId: string, packageId: string) {
+      
+      const provider = await this.resolveProvider(userId);
+
+        const pkg = await this.prisma.package.findUnique({
+          where: { id: packageId },
+          select: { id: true, providerId: true },
+        });
+      if (!pkg) throw new NotFoundException('Package not found');
+
+      const isOwner = pkg.providerId === provider.id;
+      if (!isOwner) {
+        const membership = await this.prisma.packageService.findFirst({
+          where: { packageId, providerId: provider.id, status: 'ACTIVE' },
+        });
+        if (!membership) throw new NotFoundException('You are not an active partner in this package');
+      }
+
+      const full = await this.prisma.package.findUnique({
+        where: { id: packageId },
+        include: {
+          provider: { select: { businessName: true, user: { select: { fullName: true, profileImage: true, phoneNumber: true } } } },
+          services: {
+            // المالك يرى كل الخدمات (بما فيها PENDING_PROVIDER_APPROVAL)، الشريك يرى الفعّالة فقط
+            where: isOwner ? undefined : { status: 'ACTIVE' },
+            include: { service: { include: { serviceType: { select: { name: true } }, files: { take: 1 } } } },
+          },
+        },
+      });
+
+  return { message: 'Package details retrieved', data: full };
 }
+
 async leavePackage(userId: string, packageId: string) {
   const provider = await this.resolveProvider(userId);
 
@@ -600,41 +645,41 @@ private async cancelOwnedPackage(
   /**
    * `GET /api/v1/packages/bookings/pending`
    */
-  async getPendingPackageBookings(userId: string) {
-    const provider = await this.resolveProvider(userId);
-    const items = await this.prisma.packageEventBooking.findMany({
-      where: { package: { providerId: provider.id }, status: 'PENDING' },
-      include: {
-        package: { select: { id: true, name: true } },
-        customer: { select: { id: true, fullName: true, email: true } },
-        event: { select: { name: true, eventDate: true, eventLocation: true } },
-        bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-    return { message: 'Pending package bookings retrieved', data: items };
-  }
+  // async getPendingPackageBookings(userId: string) {
+  //   const provider = await this.resolveProvider(userId);
+  //   const items = await this.prisma.packageEventBooking.findMany({
+  //     where: { package: { providerId: provider.id }, status: 'PENDING' },
+  //     include: {
+  //       package: { select: { id: true, name: true } },
+  //       customer: { select: { id: true, fullName: true, email: true } },
+  //       event: { select: { name: true, eventDate: true, eventLocation: true } },
+  //       bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+  //     },
+  //     orderBy: { createdAt: 'desc' },
+  //   });
+  //   return { message: 'Pending package bookings retrieved', data: items };
+  // }
 
   /**
    * `GET /api/v1/packages/bookings/payment-pending`
    */
-  async getPaymentPendingPackageBookings(userId: string) {
-    const provider = await this.resolveProvider(userId);
-    const items = await this.prisma.packageEventBooking.findMany({
-      where: {
-        package: { providerId: provider.id },
-        status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] },
-      },
-      include: {
-        package: { select: { id: true, name: true } },
-        customer: { select: { id: true, fullName: true, email: true } },
-        event: { select: { name: true, eventDate: true } },
-        bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
-    return { message: 'Payment-pending package bookings retrieved', data: items };
-  }
+  // async getPaymentPendingPackageBookings(userId: string) {
+  //   const provider = await this.resolveProvider(userId);
+  //   const items = await this.prisma.packageEventBooking.findMany({
+  //     where: {
+  //       package: { providerId: provider.id },
+  //       status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] },
+  //     },
+  //     include: {
+  //       package: { select: { id: true, name: true } },
+  //       customer: { select: { id: true, fullName: true, email: true } },
+  //       event: { select: { name: true, eventDate: true } },
+  //       bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+  //     },
+  //     orderBy: { updatedAt: 'desc' },
+  //   });
+  //   return { message: 'Payment-pending package bookings retrieved', data: items };
+  // }
 
   /**
    * `GET /api/v1/packages/bookings/:id` — owner view
@@ -928,6 +973,18 @@ private async cancelOwnedPackage(
       throw new BadRequestException('eventEndTime must be different from eventStartTime');
     }
 
+const existingActive = await this.prisma.packageEventBooking.findFirst({
+  where: {
+    packageId: pkg.id,
+    customerId,
+    status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
+  },
+});
+if (existingActive) {
+  throw new ConflictException(
+    'You already have an active booking request for this package. Cancel it before creating a new one.',
+  );
+}
     // Resolve PACKAGE-scope discount (auto-applied unless a code is required).
     const pkgDiscount = await this.discountsService.resolveActiveDiscountForPackage(
       pkg.id,
@@ -1203,6 +1260,47 @@ private async progressPackageToInProgress(packageEventBookingId: string) {
       amount: pb.totalAmount,
     });
   }
+
+  async getPackageBookings(userId: string, status?: PackageEventBookingStatus) {
+  const provider = await this.resolveProvider(userId);
+  const where: any = {
+    package: { providerId: provider.id },
+    status: status ?? { in: ['PENDING', 'PENDING_PAYMENT', 'CONFIRMED', 'IN_PROGRESS' , 'COMPLETED'] },
+  };
+
+  const items = await this.prisma.packageEventBooking.findMany({
+    where,
+    include: {
+      package: { select: { id: true, name: true, discountPercentage: true } },
+      customer: { select: { id: true, fullName: true, email: true } },
+      event: { select: { name: true, eventDate: true, eventLocation: true } },
+      bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return { message: 'Package bookings retrieved', data: items };
+}
+
+/** @deprecated استخدم getPackageBookings(userId, 'PENDING') */
+async getPendingPackageBookings(userId: string) {
+  return this.getPackageBookings(userId, 'PENDING' as PackageEventBookingStatus);
+}
+
+/** @deprecated استخدم getPackageBookings(userId) بدون status (يشمل PENDING_PAYMENT + CONFIRMED) */
+async getPaymentPendingPackageBookings(userId: string) {
+  const provider = await this.resolveProvider(userId);
+  const items = await this.prisma.packageEventBooking.findMany({
+    where: { package: { providerId: provider.id }, status: { in: ['PENDING_PAYMENT', 'CONFIRMED'] } },
+    include: {
+      package: { select: { id: true, name: true } },
+      customer: { select: { id: true, fullName: true, email: true } },
+      event: { select: { name: true, eventDate: true } },
+      bookings: { include: { service: { include: { serviceType: { select: { name: true } } } } } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return { message: 'Payment-pending package bookings retrieved', data: items };
+}
 
   // ─── private helpers ────────────────────────────────────────────────
 

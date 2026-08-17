@@ -15,29 +15,23 @@ export class SubServiceService {
   ) {}
 
 
-
 async createSubService(
-  providerId: string,
+  actorId: string,
+  actorRole: string,
   serviceId: string,
   dto: CreateSubServiceDto,
   media: Express.Multer.File[],
 ) {
-  const provider = await this.prisma.serviceProvider.findFirst({
-    where: {
-      userId: providerId,
-    },
-  });
+  const isAdmin = actorRole === 'ADMIN';
 
-  if (!provider) {
-    throw new NotFoundException('Provider not found for this user');
-  }
-
-  // 1. التحقق من ملكية الخدمة
+  // 1. التحقق من وجود الخدمة (الأدمن لا يُشترط عليه الملكية)
   const service = await this.prisma.service.findFirst({
-    where: {
-      id: serviceId,
-      providerId: provider.id,
-    },
+    where: isAdmin
+      ? { id: serviceId }
+      : {
+          id: serviceId,
+          provider: { userId: actorId },
+        },
     include: {
       provider: true,
       serviceType: true,
@@ -46,7 +40,9 @@ async createSubService(
 
   if (!service) {
     throw new NotFoundException(
-      'Service not found or you do not own this service',
+      isAdmin
+        ? 'Service not found'
+        : 'Service not found or you do not own this service',
     );
   }
 
@@ -58,8 +54,8 @@ async createSubService(
     );
   }
 
-  // 3. التحقق من أن الخدمة مكتملة التفاصيل
-  if (!service.isCompleted) {
+  // 3. التحقق من إكمال تفاصيل الخدمة (لا يُطبَّق على الأدمن)
+  if (!isAdmin && !service.isCompleted) {
     throw new BadRequestException(
       'Please complete service details first before adding sub-services',
     );
@@ -79,14 +75,14 @@ async createSubService(
         folder: 'eventy/services',
       });
       return {
-        url: uploaded.url,  // ✅ url
-        type: file.mimetype.startsWith('video') ? FileType.VIDEO : FileType.IMAGE,  // ✅ type
+        url: uploaded.url,
+        type: file.mimetype.startsWith('video') ? FileType.VIDEO : FileType.IMAGE,
         publicId: uploaded.publicId,
       };
     }),
   );
 
-  // 6. إنشاء SubService مع الملفات
+  // 6. إنشاء SubService — الأدمن: نشطة فورًا | المزود: بانتظار المراجعة
   const subService = await this.prisma.subService.create({
     data: {
       name: dto.name,
@@ -94,11 +90,13 @@ async createSubService(
       pricePerUnit: dto.pricePerUnit,
       unitType: dto.unitType as any,
       dailyCapacity: dto.dailyCapacity,
-      serviceId: serviceId,
+      serviceId,
+      isAvailable: isAdmin ? true : false,
+      approvalStatus: isAdmin ? 'ACTIVE' : 'PENDING_APPROVAL',
       media: {
-        create: uploadedMedia.map(m => ({
-          url: m.url,  // ✅ url
-          type: m.type,  // ✅ type
+        create: uploadedMedia.map((m) => ({
+          url: m.url,
+          type: m.type,
           publicId: m.publicId,
         })),
       },
@@ -108,18 +106,23 @@ async createSubService(
     },
   });
 
-  await this.prisma.serviceChangeRequest.create({
-    data: {
-      targetType: 'SUB_SERVICE',
-      targetId: subService.id,
-      requestType: 'CREATE',
-      payload: dto as unknown as object,
-      status: 'PENDING',
-    },
-  });
+  // 7. طلب المراجعة فقط عندما يكون الفاعل مزودًا (الأدمن لا يحتاج موافقة نفسه)
+  if (!isAdmin) {
+    await this.prisma.serviceChangeRequest.create({
+      data: {
+        targetType: 'SUB_SERVICE',
+        targetId: subService.id,
+        requestType: 'CREATE',
+        payload: dto as unknown as object,
+        status: 'PENDING',
+      },
+    });
+  }
 
   return {
-    message: 'Sub-service created successfully',
+    message: isAdmin
+      ? 'Sub-service added and activated successfully'
+      : 'Sub-service created successfully',
     data: subService,
   };
 }

@@ -22,6 +22,7 @@ import {
 import { PackageBookingQueryDto } from './dto/package-booking-query.dto';
 import { rangesOverlap } from 'src/common/helpers/time.helper';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentGatewayService } from '../payments/gateways/payment-gateway.service';
 
 
 @Injectable()
@@ -31,6 +32,7 @@ export class PackagesService {
     private readonly domainEventBus: DomainEventBus,
     private readonly discountsService: DiscountsService,
     private readonly notificationsService: NotificationsService, 
+        private readonly gateway: PaymentGatewayService,
   ) {}
 
   // ─── helpers ────────────────────────────────────────────────────────
@@ -185,7 +187,6 @@ private async assertCommonTimeWindow(serviceIds: string[]) {
    * this architecture cross-provider composition is out of scope; each row
    * is therefore born in ACTIVE status, no join-request round-trip.
    */
-  // src/modules/packages/packages.service.ts
 
 async createPackage(userId: string, dto: CreatePackageDto) {
   const provider = await this.resolveProvider(userId);
@@ -583,7 +584,6 @@ async activatePackage(userId: string, packageId: string) {
   /**
    * `GET /api/v1/packages/join-requests/pending`
    */
-// src/modules/packages/packages.service.ts
 
 async getPendingJoinRequests(userId: string) {
   const provider = await this.resolveProvider(userId);
@@ -1354,7 +1354,7 @@ await this.assertNoBlockedSlotsForPackage(
   return { message: 'Package booking cancelled', data: { id: packageEventBookingId, status: 'CANCELLED' } };
 }
 
- async payPackageBooking(userId: string, packageEventBookingId: string, dto: PayPackageBookingDto) {
+async payPackageBooking(userId: string, packageEventBookingId: string, dto: PayPackageBookingDto) {
   const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { customerId: userId });
 
   if (pb.status !== 'PENDING_PAYMENT') {
@@ -1366,9 +1366,32 @@ await this.assertNoBlockedSlotsForPackage(
   }
 
   if (dto.method === PaymentMethod.BANK_TRANSFER) {
+    // Try the real gateway's intent flow first (mobile Payment Sheet).
+    // If no real gateway is connected, createIntent() returns null and we
+    // fall back to the previous synchronous behavior — nothing breaks
+    // without a Stripe key configured.
+    const intent = await this.gateway.createIntent(pb.payment);
+
+    if (intent.clientSecret) {
+      const updated = await this.prisma.payment.update({
+        where: { id: pb.payment.id },
+        data: { method: dto.method, status: PaymentStatus.PROCESSING, providerReference: intent.intentId },
+      });
+      return {
+        message: 'Payment intent created — complete it via the Payment Sheet',
+        data: { ...updated, clientSecret: intent.clientSecret },
+      };
+    }
+
+    // Fallback: synchronous mock-style success (previous behavior)
     const paid = await this.prisma.payment.update({
       where: { id: pb.payment.id },
-      data: { method: dto.method, status: PaymentStatus.PAID, paidAt: new Date(), providerReference: `MOCK-BT-${pb.id}-${Date.now()}` },
+      data: {
+        method: dto.method,
+        status: PaymentStatus.PAID,
+        paidAt: new Date(),
+        providerReference: `MOCK-BT-${pb.id}-${Date.now()}`,
+      },
     });
     await this.progressPackageToInProgress(packageEventBookingId);
 
@@ -1409,6 +1432,53 @@ await this.assertNoBlockedSlotsForPackage(
   };
 }
 
+/**
+ * Called by the mobile app after Stripe's Payment Sheet confirms client-side
+ * for a package booking. Mirrors PaymentsService.confirmPayment — verifies
+ * the intent server-side before marking PAID.
+ */
+async confirmPackageCardPayment(userId: string, packageEventBookingId: string) {
+  const pb = await this.getPackageEventBookingOrThrow(packageEventBookingId, { customerId: userId });
+
+  if (!pb.payment) throw new NotFoundException('No payment record found for this package booking');
+  if (pb.payment.status !== PaymentStatus.PROCESSING) {
+    throw new BadRequestException(`Payment cannot be confirmed while it is ${pb.payment.status}`);
+  }
+  if (!pb.payment.providerReference) {
+    throw new BadRequestException('No pending gateway intent found for this payment');
+  }
+
+  const result = await this.gateway.verifyIntent(pb.payment.providerReference);
+
+  if (!result.success) {
+    const failed = await this.prisma.payment.update({
+      where: { id: pb.payment.id },
+      data: { status: PaymentStatus.FAILED },
+    });
+    return { message: 'Payment could not be confirmed', data: failed };
+  }
+
+  const paid = await this.prisma.payment.update({
+    where: { id: pb.payment.id },
+    data: { status: PaymentStatus.PAID, paidAt: new Date(), providerReference: result.providerReference },
+  });
+  await this.progressPackageToInProgress(packageEventBookingId);
+
+  const partners = await this.getPackagePartnerUserIds(pb.packageId);
+  for (const partnerUserId of partners) {
+    this.domainEventBus.packagePaymentConfirmed({
+      actorId: userId,
+      targetUserId: partnerUserId,
+      entityId: packageEventBookingId,
+      packageId: pb.packageId,
+      packageName: pb.package.name,
+      packageEventBookingId,
+      amount: pb.totalAmount,
+    });
+  }
+
+  return { message: 'Payment confirmed — booking is now in progress', data: paid };
+}
 private async getPackagePartnerUserIds(packageId: string): Promise<string[]> {
   const rows = await this.prisma.packageService.findMany({
     where: { packageId, status: 'ACTIVE' },

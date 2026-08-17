@@ -103,6 +103,20 @@ export class PackagesController {
     return this.packagesService.payPackageBooking(req.user.sub, id, dto);
   }
 
+  @Post('bookings/:id/confirm-card-payment')
+  @ApiTags('Packages-Customer')
+  @UseGuards(JwtAuthGuard)
+  @HttpCode(HttpStatus.OK)
+  @Audit({ action: AuditAction.UPDATE, entity: 'PackageEventBooking', entityIdKey: 'id' })
+  @ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
+  @ApiOperation({
+    summary: 'Confirm a package payment after client-side Payment Sheet success',
+    description: '**Allowed roles:** the customer who owns the package booking. Only relevant when BANK_TRANSFER returned a clientSecret.',
+  })
+  confirmPackageCardPayment(@Request() req, @Param('id') id: string) {
+    return this.packagesService.confirmPackageCardPayment(req.user.sub, id);
+  }
+
   @Post('bookings/:id/cancel')
   @ApiTags('Packages-Customer')
   @UseGuards(JwtAuthGuard)
@@ -405,6 +419,7 @@ getPackageBookings(@Request() req, @Query('status') status?: PackageEventBooking
   @ApiOperation({
     summary: 'Confirm cash payment for a package booking',
     description: '**Allowed roles:** PROVIDER (package owner only).',
+      deprecated: true,
   })
   confirmPackagePayment(@Request() req, @Param('id') id: string) {
     return this.packagesService.confirmPackageCashPayment(req.user.sub, id);

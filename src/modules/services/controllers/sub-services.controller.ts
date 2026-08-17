@@ -27,6 +27,9 @@ import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { SubServiceService } from '../sub-services.service';
 import { CreateSubServiceDto } from '../dto/create-sub-service.dto';
 import { UpdateSubServiceDto } from '../dto/update-sub-service.dto';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { UserRole } from '@prisma/client';
+import { Roles } from 'src/common/decorators/roles.decorator';
 
 @ApiTags('Sub-Services')
 @Controller('services/:serviceId/sub-services')
@@ -37,6 +40,8 @@ export class SubServiceController {
 
   // ========== إضافة SubService ==========
   @Post()
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.PROVIDER, UserRole.ADMIN)
   @UseInterceptors(FilesInterceptor('media', 10)) // max 10 files
   @ApiConsumes('multipart/form-data')
   @ApiOperation({
@@ -53,8 +58,7 @@ export class SubServiceController {
     @Body() dto: CreateSubServiceDto,
     @UploadedFiles() media: Express.Multer.File[],
   ) {
-    const providerId = req.user.sub;
-    return this.subServiceService.createSubService(providerId, serviceId, dto, media);
+    return this.subServiceService.createSubService( req.user.sub,req.user.role, serviceId, dto, media);
   }
 
   // ========== الحصول على جميع SubServices للخدمة ==========

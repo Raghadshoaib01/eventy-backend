@@ -57,50 +57,95 @@ export class PaymentsService {
    * the package's own discount, at booking time (no stacking, docs
    * /discounts-implementation-plan.md §4/§5).
    */
-  private async createPaymentForBooking(payerId: string, booking: Booking, method: PaymentMethod, discountCode?: string) {
-    // Double-payment guard (docs §9): return the existing row instead of
-    // erroring unhelpfully if one already exists for this booking.
-    const existing = await this.prisma.payment.findUnique({ where: { bookingId: booking.id } });
-    if (existing) {
-      return { message: 'Payment already exists for this booking', data: existing };
-    }
+ // src/modules/payments/payments.service.ts — التعديلات فقط، الباقي كما هو
 
-    const subtotalAmount = booking.finalAmount ?? booking.totalAmount;
-
-    let discountId: string | undefined;
-    let discountAmount: number | undefined;
-    let amount = subtotalAmount;
-
-    if (!booking.packageEventBookingId) {
-      const discount = await this.discountsService.resolveActiveDiscountForService(booking.serviceId, discountCode);
-      const pricing = this.discountsService.computePriceWithDiscount(subtotalAmount, discount);
-      if (discount) {
-        discountId = discount.id;
-        discountAmount = pricing.discountAmount;
-        amount = pricing.finalPrice;
-      }
-    }
-
-    const payment = await this.prisma.payment.create({
-      data: {
-        bookingId: booking.id,
-        payerId,
-        amount,
-        subtotalAmount,
-        discountId,
-        discountAmount,
-        method,
-        status: PaymentStatus.PENDING,
-      },
-    });
-
-    if (method === PaymentMethod.CASH) {
-      // Provider confirms manually later (docs §1, §3) — nothing more to do now.
-      return { message: 'Cash payment recorded — awaiting provider confirmation', data: payment };
-    }
-
-    return this.processElectronicPayment(payment);
+private async createPaymentForBooking(payerId: string, booking: Booking, method: PaymentMethod, discountCode?: string) {
+  const existing = await this.prisma.payment.findUnique({ where: { bookingId: booking.id } });
+  if (existing) {
+    return { message: 'Payment already exists for this booking', data: existing };
   }
+
+  const subtotalAmount = booking.finalAmount ?? booking.totalAmount;
+
+  let discountId: string | undefined;
+  let discountAmount: number | undefined;
+  let amount = subtotalAmount;
+
+  if (!booking.packageEventBookingId) {
+    const discount = await this.discountsService.resolveActiveDiscountForService(booking.serviceId, discountCode);
+    const pricing = this.discountsService.computePriceWithDiscount(subtotalAmount, discount);
+    if (discount) {
+      discountId = discount.id;
+      discountAmount = pricing.discountAmount;
+      amount = pricing.finalPrice;
+    }
+  }
+
+  const payment = await this.prisma.payment.create({
+    data: {
+      bookingId: booking.id,
+      payerId,
+      amount,
+      subtotalAmount,
+      discountId,
+      discountAmount,
+      method,
+      status: PaymentStatus.PENDING,
+    },
+  });
+
+  if (method === PaymentMethod.CASH) {
+    return { message: 'Cash payment recorded — awaiting provider confirmation', data: payment };
+  }
+
+  // BANK_TRANSFER: try the real gateway's intent flow first (Payment Sheet).
+  // If no real gateway is connected (createIntent returns nulls), fall back
+  // to the previous synchronous behavior — nothing breaks without a Stripe key.
+  const intent = await this.gateway.createIntent(payment);
+
+  if (intent.clientSecret) {
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: PaymentStatus.PROCESSING, providerReference: intent.intentId },
+    });
+    return {
+      message: 'Payment intent created — complete it via the Payment Sheet',
+      data: { ...updated, clientSecret: intent.clientSecret },
+    };
+  }
+
+  return this.processElectronicPayment(payment);
+}
+
+/**
+ * Called by the mobile app after Stripe's Payment Sheet confirms client-side.
+ * Verifies the intent server-side before marking the payment as PAID —
+ * never trusts the client's "it succeeded" claim alone.
+ */
+async confirmPayment(userId: string, paymentId: string) {
+  const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+  if (!payment) throw new NotFoundException('Payment not found');
+  if (payment.payerId !== userId) throw new ForbiddenException('Access denied');
+  if (payment.status !== PaymentStatus.PROCESSING) {
+    throw new BadRequestException(`Payment cannot be confirmed while it is ${payment.status}`);
+  }
+  if (!payment.providerReference) {
+    throw new BadRequestException('No pending gateway intent found for this payment');
+  }
+
+  const result = await this.gateway.verifyIntent(payment.providerReference);
+
+  if (result.success) {
+    const paid = await this.markPaid(payment.id, result.providerReference);
+    return { message: 'Payment confirmed', data: paid };
+  }
+
+  const failed = await this.prisma.payment.update({
+    where: { id: payment.id },
+    data: { status: PaymentStatus.FAILED },
+  });
+  return { message: 'Payment could not be confirmed', data: failed };
+}
 
   private async processElectronicPayment(payment: Payment) {
     await this.prisma.payment.update({
@@ -152,21 +197,30 @@ export class PaymentsService {
   // ── provider ─────────────────────────────────────────────────
 
   async markCashPaid(userId: string, paymentId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { provider: true } });
-    if (!user || !user.provider) throw new NotFoundException('Provider not found');
-
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       include: { booking: true },
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
-    if (payment.booking.providerId !== user.provider.id) {
-      throw new ForbiddenException('Access denied');
-    }
     if (payment.method !== PaymentMethod.CASH) {
       throw new BadRequestException('Only cash payments can be confirmed this way');
     }
+
+    // Package-sourced payment (bookingId is null, packageEventBookingId is set) —
+    // delegate to PackagesService, which owns the provider/status validation
+    // and the CONFIRMED → IN_PROGRESS progression for the whole package.
+    if (payment.packageEventBookingId) {
+      return this.packagesService.confirmPackageCashPayment(userId, payment.packageEventBookingId);
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { provider: true } });
+    if (!user || !user.provider) throw new NotFoundException('Provider not found');
+
+    if (!payment.booking || payment.booking.providerId !== user.provider.id) {
+      throw new ForbiddenException('Access denied');
+    }
+
     const confirmableStatuses: PaymentStatus[] = [PaymentStatus.PENDING, PaymentStatus.PROCESSING];
     if (!confirmableStatuses.includes(payment.status)) {
       throw new BadRequestException(`Payment cannot be confirmed while it is ${payment.status}`);

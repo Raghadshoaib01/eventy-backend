@@ -17,7 +17,7 @@ export function IsTodayOrFuture(validationOptions?: ValidationOptions) {
 
           const inputDate = new Date(value);
           if (isNaN(inputDate.getTime())) return false;
-
+        
           // مقارنة التاريخ فقط بدون الوقت
           const today = new Date();
           today.setHours(0, 0, 0, 0);
@@ -25,6 +25,9 @@ export function IsTodayOrFuture(validationOptions?: ValidationOptions) {
           inputDate.setHours(0, 0, 0, 0);
 
           return inputDate >= today;
+           }, 
+          defaultMessage(args: ValidationArguments) {
+          return `${args.property} must be today or a future date`;
         },
       },
     });

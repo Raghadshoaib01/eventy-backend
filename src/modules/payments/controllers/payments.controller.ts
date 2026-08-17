@@ -26,4 +26,11 @@ export class PaymentsController {
   findOne(@Request() req, @Param('id') id: string) {
     return this.paymentsService.getPayment(req.user.sub, id);
   }
+
+@Post(':id/confirm')
+@ApiParam({ name: 'id', description: 'Payment ID' })
+@ApiOperation({ summary: 'Confirm a payment after client-side Payment Sheet success' })
+confirm(@Request() req, @Param('id') id: string) {
+  return this.paymentsService.confirmPayment(req.user.sub, id);
+}
 }

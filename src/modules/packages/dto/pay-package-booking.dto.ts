@@ -15,7 +15,7 @@ export class PayPackageBookingDto {
   @ApiProperty({
     required: false,
     description: 'Optional PACKAGE-scope discount code (only on first payment of the package)',
-    example: 'PROMO10',
+    example: 'do not send any code across the system',
   })
   @IsOptional()
   @IsString()

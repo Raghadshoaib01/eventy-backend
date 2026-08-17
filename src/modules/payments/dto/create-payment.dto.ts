@@ -11,7 +11,7 @@ export class CreatePaymentDto {
   @IsEnum(PaymentMethod)
   method: PaymentMethod;
 
-  @ApiPropertyOptional({ example: 'WEDDING10', description: 'Coupon code for a SERVICE-scope discount' })
+  @ApiPropertyOptional({ example: 'do not send any code across the system', description: 'do not send any code across the system' })
   @IsOptional()
   @IsString()
   discountCode?: string;

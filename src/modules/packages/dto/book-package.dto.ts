@@ -54,8 +54,8 @@ export class BookPackageDto {
   customerNotes?: string;
 
   @ApiPropertyOptional({
-    example: 'PROMO10',
-    description: 'Optional PACKAGE-scope discount code',
+    example: 'do not send any code across the system',
+    description: 'do not send any code across the system',
   })
   @IsOptional()
   @IsString()

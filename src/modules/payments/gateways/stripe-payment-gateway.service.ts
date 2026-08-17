@@ -12,47 +12,82 @@ export class StripePaymentGatewayService implements PaymentGatewayService, OnMod
   private currency = 'usd';
   private _isAvailable = false;
 
-  constructor(private readonly config: ConfigService) {}
-
-  onModuleInit(): void {
-    const secretKey = this.config.get<string>('STRIPE_SECRET_KEY');
-    this.currency = this.config.get<string>('STRIPE_CURRENCY') ?? 'usd';
-    console.log('Stripe key exists:', !!secretKey);
-    console.log('Stripe key prefix:', secretKey?.slice(0, 8));
-
-    if (!secretKey) {
-      this.logger.warn(
-        '[StripeGateway] STRIPE_SECRET_KEY not set — falling back to mock gateway.',
-      );
-      return;
-    }
-
-    try {
-      this.stripe = new Stripe(secretKey,);
-      this._isAvailable = true;
-      this.logger.log('[StripeGateway] Initialised successfully (test mode).');
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.logger.error(`[StripeGateway] Initialisation failed: ${message}`);
+  constructor(private readonly config: ConfigService) {
+    // التحقق الفوري ومباشرة عند إنشاء الـ Service دون انتظار onModuleInit
+    const secretKey = process.env.STRIPE_SECRET_KEY || this.config.get<string>('STRIPE_SECRET_KEY');
+    this.currency = process.env.STRIPE_CURRENCY || this.config.get<string>('STRIPE_CURRENCY') ?? 'usd';
+    if (secretKey) {
+      try {
+        this.stripe = new Stripe(secretKey);
+        this._isAvailable = true;
+      } catch (err) {
+        this.logger.error(`[StripeGateway] Initialisation failed`);
+      }
     }
   }
+  
+
+  
+
+  onModuleInit(): void {
+    // يمكن تركها للوجز فقط
+  }
+
+  // onModuleInit(): void {
+  //   const secretKey = this.config.get<string>('STRIPE_SECRET_KEY');
+  //   this.currency = this.config.get<string>('STRIPE_CURRENCY') ?? 'usd';
+  //   console.log('Stripe key exists:', !!secretKey);
+  //   console.log('Stripe key prefix:', secretKey?.slice(0, 8));
+
+  //   if (!secretKey) {
+  //     this.logger.warn(
+  //       '[StripeGateway] STRIPE_SECRET_KEY not set — falling back to mock gateway.',
+  //     );
+  //     return;
+  //   }
+
+  //   try {
+  //     this.stripe = new Stripe(secretKey,);
+  //     this._isAvailable = true;
+  //     this.logger.log('[StripeGateway] Initialised successfully (test mode).');
+  //   } catch (err: unknown) {
+  //     const message = err instanceof Error ? err.message : String(err);
+  //     this.logger.error(`[StripeGateway] Initialisation failed: ${message}`);
+  //   }
+  // }
 
   get isAvailable(): boolean {
     return this._isAvailable;
   }
 
   async createIntent(payment: Payment): Promise<IntentResult> {
+    console.log('DEBUG: _isAvailable value is:', this._isAvailable);
+    console.log('DEBUG: stripe instance exists:', !!this.stripe);
     if (!this._isAvailable || !this.stripe) {
+      console.log('DEBUG: Stripe gateway is NOT available or stripe instance is null');
       return { clientSecret: null, intentId: null };
     }
+    try {
     const amountInCents = Math.round(payment.amount * 100);
     const intent = await this.stripe.paymentIntents.create({
       amount: amountInCents,
       currency: this.currency,
       automatic_payment_methods: { enabled: true },
       metadata: { eventyPaymentId: payment.id },
+    
     });
+    
+    console.log('DEBUG: Stripe Intent created successfully:', intent.id);
     return { clientSecret: intent.client_secret, intentId: intent.id };
+      }catch (err: unknown) {
+      // --- هذا الجزء هو المسؤول عن التقاط الطامة الكبرى وطباعتها ---
+      const message = err instanceof Error ? err.message : String(err);
+      this.logger.error(`[StripeGateway] createIntent failed: ${message}`);
+      console.error('DEBUG: Stripe API Error Details:', message);
+      
+      return { clientSecret: null, intentId: null };
+    }
+
   }
 
   async verifyIntent(intentId: string): Promise<ChargeResult> {

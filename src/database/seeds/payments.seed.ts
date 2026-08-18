@@ -90,10 +90,10 @@ export async function seedPayments(
 
   // Resolve customer user IDs
   const ahmadUser = await prisma.user.findUnique({
-    where: { email: 'ahmad@customer.eventy.com' },
+    where: { email: 'ahmad@eventy.com' },
   });
   const dinaUser = await prisma.user.findUnique({
-    where: { email: 'dina@customer.eventy.com' },
+    where: { email: 'dina@eventy.com' },
   });
   if (!ahmadUser || !dinaUser)
     throw new Error('Customer users not found. Run customer seed first.');

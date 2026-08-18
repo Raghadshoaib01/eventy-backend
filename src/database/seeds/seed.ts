@@ -97,7 +97,7 @@ async function main() {
   console.log('  📧  admin@eventy.com');
   console.log('  🔑  Admin@123456\n');
   console.log('  Test customer accounts:');
-  console.log('  📧  ahmad@customer.eventy.com  /  dina@customer.eventy.com');
+  console.log('  📧  ahmad@eventy.com  /  dina@eventy.com');
   console.log('══════════════════════════════════════════\n');
 }
 
@@ -108,4 +108,4 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-  });
+  });

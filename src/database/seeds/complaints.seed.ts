@@ -110,8 +110,8 @@ export async function seedComplaints(
 ): Promise<void> {
   console.log('\n  📣 Seeding Complaints…');
 
-  const ahmad = customers.find((c) => c.email === 'ahmad@customer.eventy.com');
-  const dina  = customers.find((c) => c.email === 'dina@customer.eventy.com');
+  const ahmad = customers.find((c) => c.email === 'ahmad@eventy.com');
+  const dina  = customers.find((c) => c.email === 'dina@eventy.com');
   if (!ahmad || !dina)
     throw new Error('Expected customers not found. Run customer seed first.');
 
@@ -123,18 +123,18 @@ export async function seedComplaints(
 
   // Resolve provider IDs
   const { providerId: linaPrvId, userId: linaUserId } = await resolveProvider(
-    prisma, 'lina@lenscraft.jo',
+    prisma, 'lina@eventy.com',
   );
   const { providerId: tarekPrvId } = await resolveProvider(
-    prisma, 'tarek@grandecor.jo',
+    prisma, 'tarek@eventy.com',
   );
   const { providerId: khalidPrvId } = await resolveProvider(
-    prisma, 'khalid@royalevents.jo',
+    prisma, 'khalid@eventy.com',
   );
 
   // Resolve service IDs
-  const decSvcId  = await resolveService(prisma, 'tarek@grandecor.jo', 'DECORATION');
-  const foodSvcId = await resolveService(prisma, 'anas@nabaah.com',    'FOOD');
+  const decSvcId  = await resolveService(prisma, 'tarek@eventy.com', 'DECORATION');
+  const foodSvcId = await resolveService(prisma, 'anas@eventy.com',    'FOOD');
 
   const {
     ahmadWeddingHall,

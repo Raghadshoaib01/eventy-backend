@@ -20,14 +20,14 @@ interface BlockedSlotDef {
 const BLOCKED_SLOTS: BlockedSlotDef[] = [
   // Royal Events Venue: fully blocked for a private corporate gala
   {
-    providerEmail: 'khalid@royalevents.jo',
+    providerEmail: 'khalid@eventy.com',
     serviceTypeName: 'HALL',
     date: new Date('2026-08-20'),
     reason: 'Private corporate gala — venue fully reserved.',
   },
   // Royal Events Venue: morning blocked, afternoon free
   {
-    providerEmail: 'khalid@royalevents.jo',
+    providerEmail: 'khalid@eventy.com',
     serviceTypeName: 'HALL',
     date: new Date('2026-09-01'),
     fromTime: '10:00',
@@ -36,21 +36,21 @@ const BLOCKED_SLOTS: BlockedSlotDef[] = [
   },
   // LensCraft Studio: blocked for a full-day shoot
   {
-    providerEmail: 'lina@lenscraft.jo',
+    providerEmail: 'lina@eventy.com',
     serviceTypeName: 'PHOTOGRAPHY',
     date: new Date('2026-09-15'),
     reason: 'Full-day wedding shoot already confirmed — not available.',
   },
   // NABAAH Catering: blocked for Eid holiday
   {
-    providerEmail: 'anas@nabaah.com',
+    providerEmail: 'anas@eventy.com',
     serviceTypeName: 'FOOD',
     date: new Date('2026-06-27'),
     reason: 'Eid holiday — kitchen closed.',
   },
   // Grande Décor: blocked for setup of a confirmed event
   {
-    providerEmail: 'tarek@grandecor.jo',
+    providerEmail: 'tarek@eventy.com',
     serviceTypeName: 'DECORATION',
     date: new Date('2026-10-09'),
     fromTime: '08:00',
@@ -59,7 +59,7 @@ const BLOCKED_SLOTS: BlockedSlotDef[] = [
   },
   // SoundWave: blocked for equipment maintenance
   {
-    providerEmail: 'yousef@soundwave.jo',
+    providerEmail: 'yousef@eventy.com',
     serviceTypeName: 'SOUND',
     date: new Date('2026-07-15'),
     reason: 'Annual equipment maintenance day.',

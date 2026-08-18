@@ -114,11 +114,11 @@ export async function seedDiscounts(
   if (!adminUser) throw new Error('Admin user not found. Run admin seed first.');
 
   // Resolve services
-  const { provider: khalidProv, service: hallSvc }   = await resolveService(prisma, 'khalid@royalevents.jo',  'HALL');
-  const { service: foodNabaahSvc }                   = await resolveService(prisma, 'anas@nabaah.com',        'FOOD');
-  const { service: photoSvc }                        = await resolveService(prisma, 'lina@lenscraft.jo',      'PHOTOGRAPHY');
-  const { provider: tarekProv, service: decGrandeSvc } = await resolveService(prisma, 'tarek@grandecor.jo',   'DECORATION');
-  const { service: foodHadidiSvc }                   = await resolveService(prisma, 'sara@hadidi-kitchen.com', 'FOOD');
+  const { provider: khalidProv, service: hallSvc }   = await resolveService(prisma, 'khalid@eventy.com',  'HALL');
+  const { service: foodNabaahSvc }                   = await resolveService(prisma, 'anas@eventy.com',        'FOOD');
+  const { service: photoSvc }                        = await resolveService(prisma, 'lina@eventy.com',      'PHOTOGRAPHY');
+  const { provider: tarekProv, service: decGrandeSvc } = await resolveService(prisma, 'tarek@eventy.com',   'DECORATION');
+  const { service: foodHadidiSvc }                   = await resolveService(prisma, 'sara@eventy.com', 'FOOD');
 
   // ── D1: SERVICE / PROVIDER / ACTIVE ──────────────────────────────────────
   // 15% off the Royal Events HALL service — provider-funded, valid summer 2026
@@ -173,7 +173,7 @@ export async function seedDiscounts(
       needsReconfirmation: false,
       startsAt:        new Date('2026-04-01'),
       endsAt:          new Date('2026-06-30'),
-      createdByUserId: (await prisma.user.findUnique({ where: { email: 'lina@lenscraft.jo' } }))!.id,
+      createdByUserId: (await prisma.user.findUnique({ where: { email: 'lina@eventy.com' } }))!.id,
     },
   );
 
@@ -246,7 +246,7 @@ export async function seedDiscounts(
       percentOff:      8,
       status:          DiscountStatus.ACTIVE,
       needsReconfirmation: false,
-      createdByUserId: (await prisma.user.findUnique({ where: { email: 'sara@hadidi-kitchen.com' } }))!.id,
+      createdByUserId: (await prisma.user.findUnique({ where: { email: 'sara@eventy.com' } }))!.id,
     },
   );
 

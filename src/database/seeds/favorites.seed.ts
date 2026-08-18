@@ -75,24 +75,24 @@ export async function seedFavorites(
 ): Promise<void> {
   console.log('\n  ❤️  Seeding Favorites…');
 
-  const ahmad = customers.find((c) => c.email === 'ahmad@customer.eventy.com');
-  const dina  = customers.find((c) => c.email === 'dina@customer.eventy.com');
+  const ahmad = customers.find((c) => c.email === 'ahmad@eventy.com');
+  const dina  = customers.find((c) => c.email === 'dina@eventy.com');
   if (!ahmad || !dina)
     throw new Error('Expected customers not found. Run customer seed first.');
 
   // ── Resolve service IDs ──────────────────────────────────────────────────
-  const hallSvcId      = await resolveService(prisma, 'khalid@royalevents.jo',   'HALL');
-  const foodNabaahId   = await resolveService(prisma, 'anas@nabaah.com',          'FOOD');
-  const photoLensId    = await resolveService(prisma, 'lina@lenscraft.jo',        'PHOTOGRAPHY');
-  const decGrandeId    = await resolveService(prisma, 'tarek@grandecor.jo',       'DECORATION');
-  const foodHadidiId   = await resolveService(prisma, 'sara@hadidi-kitchen.com',  'FOOD');
-  const soundBeatId    = await resolveService(prisma, 'faris@beatmaster.jo',      'SOUND');
+  const hallSvcId      = await resolveService(prisma, 'khalid@eventy.com',   'HALL');
+  const foodNabaahId   = await resolveService(prisma, 'anas@eventy.com',          'FOOD');
+  const photoLensId    = await resolveService(prisma, 'lina@eventy.com',        'PHOTOGRAPHY');
+  const decGrandeId    = await resolveService(prisma, 'tarek@eventy.com',       'DECORATION');
+  const foodHadidiId   = await resolveService(prisma, 'sara@eventy.com',  'FOOD');
+  const soundBeatId    = await resolveService(prisma, 'faris@eventy.com',      'SOUND');
 
   // ── Resolve provider IDs ─────────────────────────────────────────────────
-  const khalidProvId   = await resolveProvider(prisma, 'khalid@royalevents.jo');
-  const anasPrvId      = await resolveProvider(prisma, 'anas@nabaah.com');
-  const linaPrvId      = await resolveProvider(prisma, 'lina@lenscraft.jo');
-  const tarekPrvId     = await resolveProvider(prisma, 'tarek@grandecor.jo');
+  const khalidProvId   = await resolveProvider(prisma, 'khalid@eventy.com');
+  const anasPrvId      = await resolveProvider(prisma, 'anas@eventy.com');
+  const linaPrvId      = await resolveProvider(prisma, 'lina@eventy.com');
+  const tarekPrvId     = await resolveProvider(prisma, 'tarek@eventy.com');
 
   // ══════════════════════════════════════════════════════════════════════════
   // Ahmad's favorites

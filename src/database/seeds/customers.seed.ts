@@ -1,9 +1,4 @@
 // src/database/seeds/customers.seed.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// Seeds customer accounts used by events and bookings.
-// Returns a map of email → User for use in downstream seeds.
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { AccountStatus, PrismaClient, UserRole } from '@prisma/client';
 import { getSeedPasswordHash } from './helpers.seed';
 
@@ -17,7 +12,7 @@ export interface SeededCustomer {
 const CUSTOMER_DEFS = [
   {
     fullName: 'Ahmad Al-Rashid',
-    email: 'ahmad@customer.eventy.com',
+    email: 'ahmad@eventy.com',
     phone: '+962790000001',
     locationName: 'Amman, Jordan',
     latitude: 31.9522,
@@ -25,7 +20,7 @@ const CUSTOMER_DEFS = [
   },
   {
     fullName: 'Dina Haddad',
-    email: 'dina@customer.eventy.com',
+    email: 'dina@eventy.com',
     phone: '+962790000002',
     locationName: 'Amman, Jordan',
     latitude: 31.9621,
@@ -33,9 +28,7 @@ const CUSTOMER_DEFS = [
   },
 ];
 
-export async function seedCustomers(
-  prisma: PrismaClient,
-): Promise<SeededCustomer[]> {
+export async function seedCustomers(prisma: PrismaClient): Promise<SeededCustomer[]> {
   const passwordHash = await getSeedPasswordHash();
   const result: SeededCustomer[] = [];
 
@@ -64,14 +57,9 @@ export async function seedCustomers(
       console.log('  ⚠️  Customer exists, skipping:', user.email);
     }
 
-    // Ensure Customer record exists even if user was already there
-    let customerRecord = await prisma.customer.findUnique({
-      where: { userId: user.id },
-    });
+    let customerRecord = await prisma.customer.findUnique({ where: { userId: user.id } });
     if (!customerRecord) {
-      customerRecord = await prisma.customer.create({
-        data: { userId: user.id },
-      });
+      customerRecord = await prisma.customer.create({ data: { userId: user.id } });
     }
 
     result.push({

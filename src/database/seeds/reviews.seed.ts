@@ -108,8 +108,8 @@ export async function seedReviews(
 ): Promise<void> {
   console.log('\n  ⭐  Seeding Reviews…');
 
-  const ahmad = customers.find((c) => c.email === 'ahmad@customer.eventy.com');
-  const dina  = customers.find((c) => c.email === 'dina@customer.eventy.com');
+  const ahmad = customers.find((c) => c.email === 'ahmad@eventy.com');
+  const dina  = customers.find((c) => c.email === 'dina@eventy.com');
   if (!ahmad || !dina)
     throw new Error('Expected customers not found. Run customer seed first.');
 

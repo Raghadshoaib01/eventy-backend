@@ -113,7 +113,7 @@ function buildServiceMetadata(
 const NOTIFICATIONS: NotifDef[] = [
   // ── Customer: Ahmad ─────────────────────────────────────────────────────────
   {
-    userEmail: 'ahmad@customer.eventy.com',
+    userEmail: 'ahmad@eventy.com',
     title: 'Booking Confirmed 🎉',
     body: 'Your hall booking for "Al-Rashid Wedding" has been confirmed by Royal Events Venue.',
     type: NotificationType.BOOKING_ACCEPTED,
@@ -127,7 +127,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'ahmad@customer.eventy.com',
+    userEmail: 'ahmad@eventy.com',
     title: 'Quote Received',
     body: 'NABAAH Catering has sent a quote for your birthday food order. Review it now.',
     type: NotificationType.BOOKING_QUOTE_SENT,
@@ -141,7 +141,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'ahmad@customer.eventy.com',
+    userEmail: 'ahmad@eventy.com',
     title: 'Welcome to Eventy!',
     body: 'Your account is verified. Start planning your first event today.',
     type: NotificationType.ACCOUNT_VERIFIED,
@@ -156,7 +156,7 @@ const NOTIFICATIONS: NotifDef[] = [
 
   // ── Customer: Dina ──────────────────────────────────────────────────────────
   {
-    userEmail: 'dina@customer.eventy.com',
+    userEmail: 'dina@eventy.com',
     title: 'Booking Confirmed 🎉',
     body: 'Your hall booking for "Haddad Engagement Party" has been confirmed by Garden Palace.',
     type: NotificationType.BOOKING_ACCEPTED,
@@ -170,7 +170,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'dina@customer.eventy.com',
+    userEmail: 'dina@eventy.com',
     title: 'Quote Received — Decoration',
     body: 'Grande Décor has sent a quote for your decoration request. Tap to review.',
     type: NotificationType.BOOKING_QUOTE_SENT,
@@ -184,7 +184,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'dina@customer.eventy.com',
+    userEmail: 'dina@eventy.com',
     title: 'Payment Confirmed',
     body: 'Payment for Garden Palace venue has been successfully processed.',
     type: NotificationType.PAYMENT_CONFIRMED,
@@ -200,7 +200,7 @@ const NOTIFICATIONS: NotifDef[] = [
 
   // ── Provider: Khalid (Royal Events Venue) ───────────────────────────────────
   {
-    userEmail: 'khalid@royalevents.jo',
+    userEmail: 'khalid@eventy.com',
     title: 'New Booking Request',
     body: 'Ahmad Al-Rashid has requested to book your ballroom for a wedding on 15 Sep 2026.',
     type: NotificationType.BOOKING_CREATED,
@@ -214,7 +214,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'khalid@royalevents.jo',
+    userEmail: 'khalid@eventy.com',
     title: 'Account Approved ✅',
     body: 'Congratulations! Your provider account has been approved by the Eventy team.',
     type: NotificationType.PROVIDER_APPROVED,
@@ -230,7 +230,7 @@ const NOTIFICATIONS: NotifDef[] = [
 
   // ── Provider: Anas (NABAAH Catering) ────────────────────────────────────────
   {
-    userEmail: 'anas@nabaah.com',
+    userEmail: 'anas@eventy.com',
     title: 'New Booking Request',
     body: 'Ahmad Al-Rashid has requested catering for a birthday event on 20 Nov 2026.',
     type: NotificationType.BOOKING_CREATED,
@@ -244,7 +244,7 @@ const NOTIFICATIONS: NotifDef[] = [
       ),
   },
   {
-    userEmail: 'anas@nabaah.com',
+    userEmail: 'anas@eventy.com',
     title: 'Service Approved',
     body: 'Your FOOD service has been reviewed and approved. Customers can now discover it.',
     type: NotificationType.SERVICE_APPROVED,
@@ -260,7 +260,7 @@ const NOTIFICATIONS: NotifDef[] = [
 
   // ── Provider: Lina (LensCraft Studio) ───────────────────────────────────────
   {
-    userEmail: 'lina@lenscraft.jo',
+    userEmail: 'lina@eventy.com',
     title: 'New Booking Request',
     body: 'Ahmad Al-Rashid has requested a 4-hour photo session for his birthday.',
     type: NotificationType.BOOKING_CREATED,
@@ -278,7 +278,7 @@ const NOTIFICATIONS: NotifDef[] = [
   {
     userEmail: 'admin@eventy.com',
     title: 'New Provider Registration',
-    body: 'A new provider "BeatMaster Audio" has registered and is awaiting your review.',
+    body: 'A new provider "Odat Sound Rentals" has registered and is awaiting your review.',
     type: NotificationType.ADMIN_NEW_PROVIDER_REQUEST,
     isRead: false,
     deliveryStatus: DeliveryStatus.SENT,

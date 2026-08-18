@@ -1,20 +1,6 @@
 // src/database/seeds/events.seed.ts
 // ─────────────────────────────────────────────────────────────────────────────
-// Seeds Events and their associated Bookings, covering all required scenarios:
-//
-//  Event 1 – "Al-Rashid Wedding"     → Venue (HALL) only
-//  Event 2 – "Haddad Engagement"     → Venue (HALL) + DECORATION (with sub-services)
-//  Event 3 – "Ahmad's Birthday"      → Services only, NO venue (FOOD + PHOTOGRAPHY)
-//  Event 4 – "Haddad Graduation"     → Complex mix: FOOD + DECORATION + SOUND + FAVORS
-//
-// Atomicity: each event (event row + all its bookings + booking items) is
-// wrapped in a single Prisma interactive transaction.  A failure in any step
-// rolls back the entire event so the database never holds partial data.
-//
-// Idempotency: read-only resolution of services/time-slots happens BEFORE
-// the transaction opens.  Inside the transaction every write is guarded by a
-// findFirst check so re-running the seed is always safe.
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import {
   BookingStatus,
@@ -36,7 +22,12 @@ type TxClient = Omit<
 >;
 
 // ─── Helper: resolve service + provider (READ — runs before the tx) ───────────
-
+function daysFromNow(offset: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + offset);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
 async function resolveService(
   prisma: PrismaClient,
   providerEmail: string,
@@ -166,8 +157,8 @@ export async function seedEvents(
   prisma: PrismaClient,
   customers: SeededCustomer[],
 ): Promise<SeededEventsContext> {
-  const ahmad = customers.find((c) => c.email === 'ahmad@customer.eventy.com');
-  const dina = customers.find((c) => c.email === 'dina@customer.eventy.com');
+  const ahmad = customers.find((c) => c.email === 'ahmad@eventy.com');
+  const dina = customers.find((c) => c.email === 'dina@eventy.com');
 
   if (!ahmad || !dina) {
     throw new Error('Expected customers not found. Run customer seed first.');
@@ -185,7 +176,7 @@ export async function seedEvents(
   console.log('\n  📅 Event 1: Al-Rashid Wedding (HALL only)');
 
   // Pre-tx reads
-  const hallRoyal = await resolveService(prisma, 'khalid@royalevents.jo', 'HALL');
+  const hallRoyal = await resolveService(prisma, 'khalid@eventy.com', 'HALL');
   const hallRoyalSlot = await findTimeSlot(prisma, hallRoyal.service.id);
 
   await prisma.$transaction(async (tx) => {
@@ -196,17 +187,18 @@ export async function seedEvents(
       existing ??
       (await tx.event.create({
         data: {
-          customerId: ahmad.userId,
-          name: 'Al-Rashid Wedding',
-          eventType: EventType.WEDDING,
-          eventDate: new Date('2026-09-15'),
-          eventStartTime: '18:00',
-          eventEndTime: '02:00',
-          eventLocation: 'Royal Events Venue, Amman',
-          numberOfGuests: 400,
-          customerNotes: 'Large wedding, need the grand ballroom.',
-          status: EventStatus.DRAFT,
-        },
+      customerId: ahmad.userId,
+      name: 'Al-Rashid Wedding',
+      eventType: EventType.WEDDING,
+      eventDate: daysFromNow(-2),
+      eventStartTime: '18:00',
+      eventEndTime: '02:00',
+      eventLocation: 'Royal Events Venue, Amman',
+      numberOfGuests: 400,
+      customerNotes: 'Large wedding, need the grand ballroom.',
+      status: EventStatus.COMPLETED,
+      createdAt: daysFromNow(-4),
+    },
       }));
 
     ahmadWeddingHall = await upsertBooking(tx, {
@@ -217,8 +209,9 @@ export async function seedEvents(
       timeSlotId: hallRoyalSlot?.id,
       customerNotes: 'Ballroom evening booking for 400 guests.',
       totalAmount: 2500.0,
-      status: BookingStatus.CONFIRMED,
-      acceptedAt: new Date('2026-07-01'),
+      status: BookingStatus.COMPLETED,
+  acceptedAt: daysFromNow(-4),
+  completedAt: daysFromNow(-2),
     });
     console.log('    ✅ Booking [HALL]:', ahmadWeddingHall);
   });
@@ -229,9 +222,9 @@ export async function seedEvents(
   console.log('\n  📅 Event 2: Haddad Engagement (HALL + DECORATION with sub-services)');
 
   // Pre-tx reads
-  const hallGarden = await resolveService(prisma, 'rania@gardenpalace.jo', 'HALL');
+  const hallGarden = await resolveService(prisma, 'rania@eventy.com', 'HALL');
   const hallGardenSlot = await findTimeSlot(prisma, hallGarden.service.id);
-  const decGrande = await resolveService(prisma, 'tarek@grandecor.jo', 'DECORATION');
+  const decGrande = await resolveService(prisma, 'tarek@eventy.com', 'DECORATION');
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.event.findFirst({
@@ -289,9 +282,9 @@ export async function seedEvents(
   console.log('\n  📅 Event 3: Ahmad Birthday (FOOD + PHOTOGRAPHY — no venue)');
 
   // Pre-tx reads
-  const foodNabaah = await resolveService(prisma, 'anas@nabaah.com', 'FOOD');
+  const foodNabaah = await resolveService(prisma, 'anas@eventy.com', 'FOOD');
   const foodNabaahSlot = await findTimeSlot(prisma, foodNabaah.service.id);
-  const photoLens = await resolveService(prisma, 'lina@lenscraft.jo', 'PHOTOGRAPHY');
+  const photoLens = await resolveService(prisma, 'lina@eventy.com', 'PHOTOGRAPHY');
   const photoLensSlot = await findTimeSlot(prisma, photoLens.service.id);
 
   await prisma.$transaction(async (tx) => {
@@ -302,17 +295,18 @@ export async function seedEvents(
       existing ??
       (await tx.event.create({
         data: {
-          customerId: ahmad.userId,
-          name: "Ahmad's Birthday Celebration",
-          eventType: EventType.BIRTHDAY,
-          eventDate: new Date('2026-11-20'),
-          eventStartTime: '17:00',
-          eventEndTime: '22:00',
-          eventLocation: 'Private Villa, Amman',
-          numberOfGuests: 60,
-          customerNotes: 'House birthday party, need food and a photographer.',
-          status: EventStatus.DRAFT,
-        },
+      customerId: ahmad.userId,
+      name: "Ahmad's Birthday Celebration",
+      eventType: EventType.BIRTHDAY,
+      eventDate: daysFromNow(-2),
+      eventStartTime: '17:00',
+      eventEndTime: '22:00',
+      eventLocation: 'Private Villa, Amman',
+      numberOfGuests: 60,
+      customerNotes: 'House birthday party, need food and a photographer.',
+      status: EventStatus.COMPLETED,
+      createdAt: daysFromNow(-4),
+    },
       }));
 
     ahmadBirthdayFood = await upsertBooking(tx, {
@@ -323,8 +317,9 @@ export async function seedEvents(
       timeSlotId: foodNabaahSlot?.id,
       customerNotes: 'Birthday dinner for 60 guests.',
       totalAmount: 18.0 * 60 + 3.5 * 60,
-      status: BookingStatus.CONFIRMED,
-      acceptedAt: new Date('2026-08-01'),
+      status: BookingStatus.COMPLETED,
+      acceptedAt: daysFromNow(-4), 
+      completedAt: daysFromNow(-2),
     });
     await addBookingItems(tx, ahmadBirthdayFood, foodNabaah.service.id, [
       { subServiceName: 'Deluxe Cassita Platter', quantity: 60 },
@@ -340,7 +335,9 @@ export async function seedEvents(
       timeSlotId: photoLensSlot?.id,
       customerNotes: 'Photo session + premium album for birthday.',
       totalAmount: 250.0 + 120.0,
-      status: BookingStatus.PENDING,
+      status: BookingStatus.COMPLETED,
+      acceptedAt: daysFromNow(-4),
+      completedAt: daysFromNow(-2),
     });
     await addBookingItems(tx, ahmadBirthdayPhoto, photoLens.service.id, [
       { subServiceName: 'Photo Session (4 Hours)', quantity: 1 },
@@ -355,10 +352,10 @@ export async function seedEvents(
   console.log('\n  📅 Event 4: Haddad Graduation (FOOD + DECORATION + SOUND + FAVORS)');
 
   // Pre-tx reads
-  const foodHadidi = await resolveService(prisma, 'sara@hadidi-kitchen.com', 'FOOD');
-  const decPetals = await resolveService(prisma, 'maya@petalsandlight.jo', 'DECORATION');
-  const soundBeat = await resolveService(prisma, 'faris@beatmaster.jo', 'SOUND');
-  const favorsGift = await resolveService(prisma, 'nour@giftwrap.jo', 'FAVORS');
+  const foodHadidi = await resolveService(prisma, 'sara@eventy.com', 'FOOD');
+  const decPetals = await resolveService(prisma, 'maya@eventy.com', 'DECORATION');
+  const soundBeat = await resolveService(prisma, 'faris@eventy.com', 'SOUND');
+  const favorsGift = await resolveService(prisma, 'nour@eventy.com', 'FAVORS');
 
   await prisma.$transaction(async (tx) => {
     const existing = await tx.event.findFirst({
@@ -438,6 +435,76 @@ export async function seedEvents(
     ]);
     console.log('    ✅ Booking [FAVORS] with items:', b4d);
   });
+
+
+  // ═══════════ EVENT 5: Ahmad Mixed Event — حجوزات متنوعة الحالة ═══════════
+console.log('\n  📅 Event 5: Ahmad Mixed Event (accepted / rejected / confirmed-awaiting-payment)');
+
+const hallGardenForMix = await resolveService(prisma, 'rania@eventy.com', 'HALL');
+const foodSaraForMix = await resolveService(prisma, 'sara@eventy.com', 'FOOD');
+const photoLinaForMix = await resolveService(prisma, 'lina@eventy.com', 'PHOTOGRAPHY');
+
+await prisma.$transaction(async (tx) => {
+  const existing = await tx.event.findFirst({
+    where: { customerId: ahmad.userId, name: "Ahmad's Mixed Celebration" },
+  });
+  const event5 =
+    existing ??
+    (await tx.event.create({
+      data: {
+        customerId: ahmad.userId,
+        name: "Ahmad's Mixed Celebration",
+        eventType: EventType.ENGAGEMENT,
+        eventDate: daysFromNow(10),
+        eventStartTime: '18:00',
+        eventEndTime: '23:00',
+        eventLocation: 'Amman, Jordan',
+        numberOfGuests: 150,
+        customerNotes: 'Engagement party — testing full booking-status range.',
+        status: EventStatus.DRAFT,
+      },
+    }));
+
+  // مقبول (accepted → IN_PROGRESS + مدفوع)
+  await upsertBooking(tx, {
+    customerId: ahmad.userId,
+    providerId: hallGardenForMix.provider.id,
+    serviceId: hallGardenForMix.service.id,
+    eventId: event5.id,
+    customerNotes: 'Garden hall for the engagement.',
+    totalAmount: 1500.0,
+    status: BookingStatus.IN_PROGRESS,
+    acceptedAt: new Date(),
+  });
+
+  // مرفوض
+  const rejectedBookingId = await upsertBooking(tx, {
+    customerId: ahmad.userId,
+    providerId: foodSaraForMix.provider.id,
+    serviceId: foodSaraForMix.service.id,
+    eventId: event5.id,
+    customerNotes: 'Catering for 150 guests.',
+    totalAmount: 900.0,
+    status: BookingStatus.REJECTED,
+  });
+  await tx.booking.update({
+    where: { id: rejectedBookingId },
+    data: { rejectionReason: 'Fully booked on the requested date.' },
+  });
+
+  // مؤكد بانتظار الدفع (CONFIRMED بدون Payment)
+  await upsertBooking(tx, {
+    customerId: ahmad.userId,
+    providerId: photoLinaForMix.provider.id,
+    serviceId: photoLinaForMix.service.id,
+    eventId: event5.id,
+    customerNotes: 'Photography package for the engagement.',
+    totalAmount: 370.0,
+    status: BookingStatus.CONFIRMED,
+  });
+
+  console.log('    ✅ Event 5 bookings: IN_PROGRESS / REJECTED / CONFIRMED(awaiting payment)');
+});
 
   console.log('\n✅ All events and bookings seeded.');
 

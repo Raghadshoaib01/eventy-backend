@@ -20,7 +20,7 @@ import {
   PACKAGE_PAYMENT_TIMEOUT_HOURS,
 } from './packages.constants';
 import { PackageBookingQueryDto } from './dto/package-booking-query.dto';
-import { rangesOverlap } from 'src/common/helpers/time.helper';
+import { isRangeWithinWindow,rangesOverlap } from 'src/common/helpers/time.helper';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PaymentGatewayService } from '../payments/gateways/payment-gateway.service';
 
@@ -65,7 +65,43 @@ export class PackagesService {
         package: { include: { provider: { include: { user: true } } } },
         customer: true,
         event: true,
-        bookings: true,
+bookings: {
+  include: {
+    service: {
+      select: {
+        id: true,
+        serviceType: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+         provider: {
+          select: {
+            id: true,
+            businessName: true,
+          },
+        },
+      },
+    },
+    items: {
+      select: {
+        id: true,
+        subServiceId: true,
+        quantity: true,
+        unitPrice: true,
+        totalPrice: true,
+        subService: {
+          select: {
+            id: true,
+            name: true,
+            pricePerUnit: true,
+          },
+        },
+      },
+    },
+  },
+},        
         payment: true,
       },
     });
@@ -426,6 +462,13 @@ async updatePackage(userId: string, packageId: string, dto: UpdatePackageDto) {
       await tx.packageService.updateMany({
         where: { packageId, providerId: { not: provider.id }, serviceId: { notIn: removeIds } },
         data: { status: 'PENDING_PROVIDER_APPROVAL' },
+      });
+      // Keep the linked PACKAGE-scope Discount row in sync — Package.discountPercentage
+      // is the authoring field, but resolveActiveDiscountForPackage() (used at booking
+      // time) reads from the Discount table, so both must move together.
+      await tx.discount.updateMany({
+        where: { packageId, scope: 'PACKAGE', status: 'ACTIVE' },
+        data: { percentOff: dto.discountPercentage },
       });
     }
   });
@@ -1169,19 +1212,28 @@ private async cancelOwnedPackage(
     if (!pkg) throw new NotFoundException('Package not found');
     return { message: 'Exclusive package details retrieved', data: pkg };
   }
+// src/modules/packages/packages.service.ts
 
   /**
    * `POST /api/v1/packages/exclusive/:id/book`
    * Customer books an entire exclusive package:
    *   1. Creates a new Event (DRAFT).
    *   2. Creates a PackageEventBooking (PENDING).
-   *   3. Creates one PENDING child Booking per ACTIVE PackageService row,
-   *      each pre-priced at the service's `price` (HALL/SOUND) or sub-service
-   *      sum (others). Prices stored on `Booking.totalAmount` — payments are
-   *      resolved later through PaymentsService.
+   *   3. Creates one PENDING child Booking per ACTIVE PackageService row, with
+   *      real BookingItems built from the customer's sub-service selections —
+   *      mirrors EventService.createEvent()'s validation/pricing exactly:
+   *      working-day + working-hours/timeSlot containment, guest capacity,
+   *      required/forbidden items per service type, then — atomically inside
+   *      a Serializable transaction — duplicate-booking check, BlockedSlot
+   *      check, ServiceAvailability capacity, TimeSlot capacity, and
+   *      SubService daily capacity.
    *
-   * The package's own `discountPercentage` and any PACKAGE-scope discount
-   * code are applied to `PackageEventBooking.totalAmount` (cached sum).
+   * Each child Booking connects to the service's OWN provider (PackageService
+   * .providerId), not necessarily the package owner, since packages support
+   * partner (joined) services. No per-booking discount is resolved — the
+   * package's own discountPercentage / PACKAGE-scope Discount is applied once
+   * to the cached PackageEventBooking.totalAmount (no stacking, docs
+   * /discounts-implementation-plan.md §4/§5).
    */
   async bookPackage(customerId: string, packageId: string, dto: BookPackageDto) {
     const pkg = await this.prisma.package.findFirst({
@@ -1194,6 +1246,7 @@ private async cancelOwnedPackage(
               include: {
                 serviceType: { select: { name: true } },
                 subServices: { where: { isAvailable: true, approvalStatus: 'ACTIVE' } },
+                availability: { include: { workingDays: true, timeSlots: true } },
               },
             },
           },
@@ -1207,33 +1260,161 @@ private async cancelOwnedPackage(
       throw new BadRequestException('eventEndTime must be different from eventStartTime');
     }
 
-const existingActive = await this.prisma.packageEventBooking.findFirst({
-  where: {
-    packageId: pkg.id,
-    customerId,
-    status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
-  },
-});
-if (existingActive) {
-  throw new ConflictException(
-    'You already have an active booking request for this package. Cancel it before creating a new one.',
-  );
-}
-await this.assertNoBlockedSlotsForPackage(
-  pkg.services.map((ps) => ({ serviceId: ps.serviceId, providerId: ps.providerId })),
-  new Date(dto.eventDate),
-  dto.eventStartTime,
-  dto.eventEndTime,
-);
+    if (pkg.services.length === 0) {
+      throw new BadRequestException('This package currently has no active services');
+    }
+
+    // This is a "book the whole package" endpoint — the customer must supply
+    // exactly one selection per currently-active package service, no more, no less.
+    const packageServiceIds = new Set(pkg.services.map((ps) => ps.serviceId));
+    const dtoServiceIds = dto.services.map((s) => s.serviceId);
+    if (new Set(dtoServiceIds).size !== dtoServiceIds.length) {
+      throw new BadRequestException('Duplicate serviceId entries in services[]');
+    }
+    const missingIds = [...packageServiceIds].filter((id) => !dtoServiceIds.includes(id));
+    const extraIds = dtoServiceIds.filter((id) => !packageServiceIds.has(id));
+    if (missingIds.length > 0 || extraIds.length > 0) {
+      throw new BadRequestException(
+        `services[] must match exactly this package's active services.` +
+          (missingIds.length ? ` Missing: ${missingIds.join(', ')}.` : '') +
+          (extraIds.length ? ` Not part of this package: ${extraIds.join(', ')}.` : ''),
+      );
+    }
+
+    const existingActive = await this.prisma.packageEventBooking.findFirst({
+      where: {
+        packageId: pkg.id,
+        customerId,
+        status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
+      },
+    });
+    if (existingActive) {
+      throw new ConflictException(
+        'You already have an active booking request for this package. Cancel it before creating a new one.',
+      );
+    }
+
+    // Shared date helpers (identical approach to EventService.createEvent)
+    const eventDate = new Date(dto.eventDate);
+    const DAY_NAMES = [
+      'SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY',
+    ];
+    const dayOfWeek = DAY_NAMES[eventDate.getDay()];
+
+    const startOfDay = new Date(eventDate);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(eventDate);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const ACTIVE_BOOKING_STATUSES = ['PENDING', 'QUOTE_SENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED'];
+
+    // Per-service structural validation (day / working-hours / slot bounds) —
+    // safe to run before the transaction, depends only on static definitions.
+    const matchedByService = new Map<string, { availability: any; slot?: any }>();
+
+    for (const selection of dto.services) {
+      const ps = pkg.services.find((p) => p.serviceId === selection.serviceId)!;
+      const svc = ps.service;
+
+      const dayAvailabilities = svc.availability.filter((a) =>
+        a.workingDays.some((d) => d.dayOfWeek === dayOfWeek),
+      );
+      if (dayAvailabilities.length === 0) {
+        throw new BadRequestException(
+          `Service "${svc.serviceType.name}" does not work on ${dayOfWeek}`,
+        );
+      }
+
+      let matched: (typeof dayAvailabilities)[number] | undefined;
+      let matchedSlot: any;
+
+      if (selection.timeSlotId) {
+        matched = dayAvailabilities.find(
+          (a) => a.hasSlots && a.timeSlots.some((t) => t.id === selection.timeSlotId),
+        );
+        if (!matched) {
+          throw new BadRequestException(
+            `Selected time slot does not belong to service "${svc.serviceType.name}" on ${dayOfWeek}`,
+          );
+        }
+        matchedSlot = matched.timeSlots.find((t) => t.id === selection.timeSlotId)!;
+
+        if (
+          !isRangeWithinWindow(
+            dto.eventStartTime,
+            dto.eventEndTime,
+            matchedSlot.fromTime,
+            matchedSlot.toTime,
+          )
+        ) {
+          throw new BadRequestException(
+            `Event time must be fully within the selected slot (${matchedSlot.fromTime}-${matchedSlot.toTime}) for "${svc.serviceType.name}"`,
+          );
+        }
+      } else {
+        matched = dayAvailabilities.find((a) => !a.hasSlots);
+        if (!matched) {
+          throw new BadRequestException(
+            `Service "${svc.serviceType.name}" requires selecting a timeSlotId on ${dayOfWeek}`,
+          );
+        }
+
+        if (
+          !isRangeWithinWindow(
+            dto.eventStartTime,
+            dto.eventEndTime,
+            matched.workFromTime,
+            matched.workToTime,
+          )
+        ) {
+          throw new BadRequestException(
+            `Event time (${dto.eventStartTime}-${dto.eventEndTime}) is outside working hours (${matched.workFromTime}-${matched.workToTime}) for "${svc.serviceType.name}"`,
+          );
+        }
+      }
+
+      matchedByService.set(selection.serviceId, { availability: matched, slot: matchedSlot });
+
+      if (dto.numberOfGuests && svc.maxCapacity && dto.numberOfGuests > svc.maxCapacity) {
+        throw new BadRequestException(
+          `Service "${svc.serviceType.name}" cannot accommodate ${dto.numberOfGuests} guests (max: ${svc.maxCapacity})`,
+        );
+      }
+
+      const HALL_SOUND = ['HALL', 'SOUND'];
+      const requiresItems = !HALL_SOUND.includes(svc.serviceType.name);
+
+      if (requiresItems && (!selection.items || selection.items.length === 0)) {
+        throw new BadRequestException(
+          `Service "${svc.serviceType.name}" requires at least one sub-service item`,
+        );
+      }
+      if (!requiresItems && selection.items && selection.items.length > 0) {
+        throw new BadRequestException(
+          `Service "${svc.serviceType.name}" does not accept sub-service items — remove the items array`,
+        );
+      }
+
+      for (const item of selection.items ?? []) {
+        const sub = svc.subServices.find((ss) => ss.id === item.subServiceId);
+        if (!sub) {
+          throw new BadRequestException(
+            `SubService "${item.subServiceId}" not found or not available in service "${svc.serviceType.name}"`,
+          );
+        }
+      }
+    }
+
     // Resolve PACKAGE-scope discount (auto-applied unless a code is required).
     const pkgDiscount = await this.discountsService.resolveActiveDiscountForPackage(
       pkg.id,
       dto.discountCode,
     );
 
-    // Build every child Booking inside one transaction so that price
-    // computation is consistent and the package is rejected atomically if
-    // anything throws.
+    // Create Event + all child Bookings + all BookingItems atomically.
+    // Duplicate check, blocked-slot check, and all three capacity layers run
+    // INSIDE the transaction so the whole package booking is rejected
+    // atomically if any single service's availability changed underneath us.
     const result = await this.prisma.$transaction(
       async (tx) => {
         const event = await tx.event.create({
@@ -1241,7 +1422,7 @@ await this.assertNoBlockedSlotsForPackage(
             customerId,
             name: dto.name,
             eventType: dto.eventType,
-            eventDate: new Date(dto.eventDate),
+            eventDate,
             eventStartTime: dto.eventStartTime,
             eventEndTime: dto.eventEndTime,
             eventLocation: dto.eventLocation,
@@ -1254,22 +1435,137 @@ await this.assertNoBlockedSlotsForPackage(
         let totalAmount = 0;
         const childBookings: Prisma.BookingCreateWithoutPackageEventBookingInput[] = [];
 
-        for (const ps of pkg.services) {
+        for (const selection of dto.services) {
+          const ps = pkg.services.find((p) => p.serviceId === selection.serviceId)!;
           const svc = ps.service;
-          const isHallOrSound = ['HALL', 'SOUND'].includes(svc.serviceType.name);
-          const basePrice = isHallOrSound ? (svc.price ?? 0) : sumMinSubServicePrice(svc);
-          totalAmount += basePrice;
+          const { availability: matchedAvailability, slot: matchedSlot } = matchedByService.get(
+            selection.serviceId,
+          )!;
+
+          // 1) Idempotency — no active booking for same service on same date
+          const duplicate = await tx.booking.findFirst({
+            where: {
+              customerId,
+              serviceId: selection.serviceId,
+              status: { in: ACTIVE_BOOKING_STATUSES as any },
+              event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+            },
+          });
+          if (duplicate) {
+            throw new ConflictException(
+              `You already have an active booking for "${svc.serviceType.name}" on this date`,
+            );
+          }
+
+          // 2) BlockedSlot check
+          const blockedSlots = await tx.blockedSlot.findMany({
+            where: {
+              providerId: ps.providerId,
+              date: { gte: startOfDay, lte: endOfDay },
+              OR: [{ serviceId: svc.id }, { serviceId: null }],
+            },
+          });
+          const isBlocked = blockedSlots.some((b) => {
+            if (!b.fromTime || !b.toTime) return true; // whole day blocked
+            return rangesOverlap(dto.eventStartTime, dto.eventEndTime, b.fromTime, b.toTime);
+          });
+          if (isBlocked) {
+            throw new ConflictException(
+              `Service "${svc.serviceType.name}" is unavailable at the requested time on this date`,
+            );
+          }
+
+          // 3) ServiceAvailability-level daily capacity
+          const availabilityBookingCount = await tx.booking.count({
+            where: {
+              serviceId: svc.id,
+              status: { in: ACTIVE_BOOKING_STATUSES as any },
+              event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+              ...(matchedAvailability.hasSlots
+                ? { timeSlot: { availabilityId: matchedAvailability.id } }
+                : { timeSlotId: null }),
+            },
+          });
+          if (availabilityBookingCount >= matchedAvailability.capacity) {
+            throw new ConflictException(
+              `Service "${svc.serviceType.name}" has reached its daily capacity for the requested time window`,
+            );
+          }
+
+          // 4) TimeSlot-level capacity (only when a slot was selected)
+          if (matchedSlot) {
+            const slotBookingCount = await tx.booking.count({
+              where: {
+                timeSlotId: matchedSlot.id,
+                status: { in: ACTIVE_BOOKING_STATUSES as any },
+                event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+              },
+            });
+            if (slotBookingCount >= matchedSlot.capacity) {
+              throw new ConflictException(
+                `Selected time slot for "${svc.serviceType.name}" is fully booked`,
+              );
+            }
+          }
+
+          // 5) Build BookingItems + SubService daily capacity + real price
+          let serviceTotal = 0;
+          const itemsData: Array<{
+            subServiceId: string;
+            quantity: number;
+            unitPrice: number;
+            totalPrice: number;
+          }> = [];
+
+          for (const item of selection.items ?? []) {
+            const sub = svc.subServices.find((ss) => ss.id === item.subServiceId)!;
+
+            const existingQtyAgg = await tx.bookingItem.aggregate({
+              _sum: { quantity: true },
+              where: {
+                subServiceId: item.subServiceId,
+                booking: {
+                  status: { in: ACTIVE_BOOKING_STATUSES as any },
+                  event: { eventDate: { gte: startOfDay, lte: endOfDay } },
+                },
+              },
+            });
+            const existingQty = existingQtyAgg._sum.quantity ?? 0;
+            if (existingQty + item.quantity > sub.dailyCapacity) {
+              throw new ConflictException(
+                `SubService "${sub.name}" exceeds its daily capacity (${sub.dailyCapacity}) for this date`,
+              );
+            }
+
+            const totalPrice = sub.pricePerUnit * item.quantity;
+            serviceTotal += totalPrice;
+            itemsData.push({
+              subServiceId: item.subServiceId,
+              quantity: item.quantity,
+              unitPrice: sub.pricePerUnit,
+              totalPrice,
+            });
+          }
+
+          // HALL/SOUND — no sub-services, use service.price as the base amount
+          if (itemsData.length === 0 && svc.price) {
+            serviceTotal = svc.price;
+          }
+
+          totalAmount += serviceTotal;
 
           childBookings.push({
             customer: { connect: { id: customerId } },
-            provider: { connect: { id: pkg.providerId } },
+            provider: { connect: { id: ps.providerId } },
             service: { connect: { id: svc.id } },
             event: { connect: { id: event.id } },
-            totalAmount: basePrice,
+            timeSlot: matchedSlot ? { connect: { id: matchedSlot.id } } : undefined,
+            totalAmount: serviceTotal,
             status: 'PENDING',
             cancellationDeadline: new Date(
               Date.now() + PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000,
             ),
+            items: { create: itemsData },
           });
         }
 
@@ -1280,11 +1576,13 @@ await this.assertNoBlockedSlotsForPackage(
             eventId: event.id,
             status: 'PENDING',
             totalAmount: round2(totalAmount),
-            pendingExpiresAt: new Date(Date.now() + PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000), // ← جديد
+            pendingExpiresAt: new Date(
+              Date.now() + PACKAGE_BOOKING_REQUEST_TIMEOUT_HOURS * 60 * 60 * 1000,
+            ),
             bookings: { create: childBookings },
           },
           include: {
-            bookings: true,
+            bookings: { include: { items: true } },
             event: true,
           },
         });
@@ -1294,11 +1592,15 @@ await this.assertNoBlockedSlotsForPackage(
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
     );
 
-    // Apply package-level discount (either the package's own
-    // `discountPercentage` field or a PACKAGE-scope discount code) to the
-    // cached totalAmount on PackageEventBooking. Per-child booking prices
-    // remain authoritative — payments compute their own discount per booking.
-    await this.applyPackageTotalDiscount(result.packageEventBooking.id, pkgDiscount, pkg.discountPercentage);
+    // Apply package-level discount (package's own discountPercentage and/or a
+    // PACKAGE-scope Discount code) to the cached totalAmount on
+    // PackageEventBooking. Per-child booking prices remain the authoritative
+    // base — this only affects what the customer is asked to pay overall.
+    await this.applyPackageTotalDiscount(
+      result.packageEventBooking.id,
+      pkgDiscount,
+      pkg.discountPercentage,
+    );
 
     this.domainEventBus.packageBookingRequested({
       actorId: customerId,
@@ -1318,6 +1620,7 @@ await this.assertNoBlockedSlotsForPackage(
       },
     };
   }
+
 
   /**
    * `GET /api/v1/packages/bookings/:id` — customer view of their own

@@ -514,6 +514,9 @@ export class EventService {
   // إذا لم يكن أدمن يرجع مناسباته فقط
   if (user.role !== UserRole.ADMIN) {
     where.customerId = user.sub;
+    // مناسبات الباقات تُدار عبر Packages API فقط — لا تظهر ضمن قائمة
+    // مناسبات الزبون العامة (event مرتبط بأي PackageEventBooking يُستثنى)
+    where.packageEventBookings = { none: {} };
   }
 
   const [events, total] = await this.prisma.$transaction([

@@ -82,20 +82,59 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'NABAAH Catering',
     businessLicense: 'CR-NABAAH-20251001',
     description: 'Premium catering and food services for all occasions.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164714/anas_zvhkmo.jpg',
     bankIban: 'JO94CBJO0010000000000131000302',
     bankName: 'Arab Bank',
     services: [
       {
         typeName: 'FOOD',
         description: 'Premium catering for weddings, graduations, engagements, and all occasions.',
+        serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1783165071/eventy/services/jow8wiibvcwjys6tprwe.jpg',
         eventTypes: [EventType.WEDDING, EventType.GRADUATION, EventType.ENGAGEMENT, EventType.BIRTHDAY, EventType.ALL_EVENTS],
         availability: [
           { workFromTime: '09:00', workToTime: '22:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
         ],
         subServices: [
-          { name: 'Deluxe Cassita Platter', description: 'Premium deluxe cassita platter.', pricePerUnit: 18.0, unitType: 'ITEM', dailyCapacity: 500 },
-          { name: 'Grilled Meat Station', description: 'Live grilling station.', pricePerUnit: 25.0, unitType: 'ITEM', dailyCapacity: 300 },
-          { name: 'Fresh Berry Juice', description: 'Freshly squeezed juice.', pricePerUnit: 3.5, unitType: 'ITEM', dailyCapacity: 1000 },
+          { name: 'Deluxe Cassita Platter', description: 'Premium deluxe cassita platter.', pricePerUnit: 18.0, unitType: 'ITEM', dailyCapacity: 500,
+            mediaUrls: [
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165856/7_ybkl5x.jpg',
+            ],
+           },
+          { name: '3-tier wedding cake', description: 'Elegant three-tier cake with rich flavors.', pricePerUnit: 25.0, unitType: 'ITEM', dailyCapacity: 300,
+              mediaUrls: [
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1783165852/8_jp8vs8.jpg',
+            ],
+           },
+          { name: 'Fresh Berry Juice', description: 'Freshly squeezed juice.', pricePerUnit: 3.5, unitType: 'ITEM', dailyCapacity: 1000,
+              mediaUrls: [
+              'https://res.cloudinary.com/dchobrz74/image/upload/v1787174546/berryJuice_qav1y0.jpg',
+            ],
+           },
+        ],
+      },
+      {
+        typeName: 'HALL',
+        description: 'Integrated event hall offering a comfortable setting for weddings and special occasions.',
+        serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787170289/logoNB_axocoe.jpg',
+        isPackaged:true,
+        eventTypes: [EventType.WEDDING, EventType.GRADUATION, EventType.ENGAGEMENT, EventType.BIRTHDAY, EventType.ALL_EVENTS],
+        availability: [
+          { workFromTime: '09:00', workToTime: '22:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
+        ],
+        fileUrls:[
+          {url:'https://res.cloudinary.com/dchobrz74/video/upload/v1787171617/4_6036310207900944302_xzizvz.mp4',
+          fileType:FileType.VIDEO ,
+          publicId:'4_6036310207900944302_xzizvz' ,
+          },
+          {
+        url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787171694/f939a7e77c1d9acef019af3d7f83a43c_krxrdk.jpg',
+          fileType:FileType.IMAGE ,
+          publicId:'f939a7e77c1d9acef019af3d7f83a43c_krxrdk' ,
+        },
+        {
+        url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787171694/f939a7e77c1d9acef019af3d7f83a43c_krxrdk.jpg',
+          fileType:FileType.IMAGE ,
+          publicId:'f939a7e77c1d9acef019af3d7f83a43c_krxrdk' ,}
         ],
       },
     ],
@@ -110,6 +149,7 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'Hadidi Kitchen',
     businessLicense: 'CR-HADIDI-20251015',
     description: 'Home-style catering with authentic Jordanian cuisine.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164725/Sara_food_wg3vo6.jpg',
     bankIban: 'JO94CBJO0010000000000131000310',
     bankName: 'Cairo Amman Bank',
     services: [
@@ -135,6 +175,7 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'LensCraft Studio',
     businessLicense: 'CR-LENSCRAFT-20241101',
     description: 'Award-winning photography and videography.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164711/lina_photo_tjcer8.jpg',
     bankIban: 'JO94CBJO0010000000000131000303',
     bankName: 'Jordan Ahli Bank',
     services: [
@@ -151,8 +192,8 @@ const PROVIDERS: ProviderDef[] = [
     ],
   },
   {
-    fullName: 'Omar Rasheed',
-    email: 'omar@eventy.com',
+    fullName: 'Amara Rasheed',
+    email: 'Amar@eventy.com',
     phone: '+962791100010',
     locationName: 'Irbid, Jordan',
     latitude: 32.5568,
@@ -160,6 +201,7 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'FlashPoint Media',
     businessLicense: 'CR-FLASH-20250301',
     description: 'Creative photography and social-media content production.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164728/omar_iruf18.jpg',
     bankIban: 'JO94CBJO0010000000000131000311',
     bankName: 'Arab Bank',
     services: [
@@ -184,6 +226,7 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'GiftWrap Studio',
     businessLicense: 'CR-GIFTWRAP-20250201',
     description: 'Bespoke wedding favours and personalised gifts.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164724/rose_cxqe4d.jpg',
     bankIban: 'JO94CBJO0010000000000131000304',
     bankName: 'Bank of Jordan',
     services: [
@@ -232,6 +275,7 @@ const PROVIDERS: ProviderDef[] = [
     businessName: 'Grande Décor',
     businessLicense: 'CR-GRANDECOR-20240901',
     description: 'High-end event decoration.',
+    profileImage:'https://res.cloudinary.com/dchobrz74/image/upload/v1787164726/yousef_a2kutk.jpg',
     bankIban: 'JO94CBJO0010000000000131000305',
     bankName: 'Arab Bank',
     services: [
@@ -386,11 +430,23 @@ const PROVIDERS: ProviderDef[] = [
         typeName: 'HALL',
         description: 'Elegant hall exclusive to Emerald packages.',
         eventTypes: [EventType.WEDDING, EventType.ENGAGEMENT, EventType.ALL_EVENTS],
+        serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174813/HallLogo_dtpfbu.jpg',
         isPackaged: true,
         minCapacity: 100,
         maxCapacity: 600,
         price: 3000.0,
         availability: [{ workFromTime: '10:00', workToTime: '02:00', capacity: 3, hasSlots: false, days: ALL_DAYS }],
+        fileUrls:[
+          {
+        url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174748/2fb42d09a6801fe3a21b0b97cc03adbf_ak56pj.jpg',
+          fileType:FileType.IMAGE ,
+          publicId:'2fb42d09a6801fe3a21b0b97cc03adbf_ak56pj' ,
+        },
+        {
+        url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174801/a8a540f71bc95c18b7ae64dc083b5192_vfkcuc.jpg',
+          fileType:FileType.IMAGE ,
+          publicId:'a8a540f71bc95c18b7ae64dc083b5192_vfkcuc',}
+        ],
       },
     ],
   },

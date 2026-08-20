@@ -146,6 +146,21 @@ getMyPackageBookings(@Request() req, @Query() query: PackageBookingQueryDto) {
   return this.packagesService.getMyPackageBookings(req.user.sub, query);
 }
 
+@Get('my-bookings/:id')
+@ApiTags('Packages-Customer')
+@UseGuards(JwtAuthGuard)
+@ApiParam({ name: 'id', description: 'PackageEventBooking UUID' })
+@ApiOperation({
+  summary: 'Get details of one of my package bookings',
+  description: '**Allowed roles:** the customer who owns the package booking.',
+})
+@ApiResponse({ status: 200, description: 'Package booking retrieved successfully' })
+@ApiResponse({ status: 403, description: 'Access denied — not your package booking' })
+@ApiResponse({ status: 404, description: 'Package booking not found' })
+getMyPackageBookingById(@Request() req, @Param('id') id: string) {
+  return this.packagesService.getPackageBookingForCustomer(req.user.sub, id);
+}
+
 @Get('bookings')
 @ApiTags('Packages-Provider')
 @UseGuards(JwtAuthGuard, RolesGuard)

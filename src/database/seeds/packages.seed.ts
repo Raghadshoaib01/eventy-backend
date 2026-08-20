@@ -106,7 +106,7 @@ export async function seedPackages(
   const linaProv = await resolveProvider(prisma, 'lina@eventy.com');
   const tarekProv = await resolveProvider(prisma, 'tarek@eventy.com');
   const saraProv = await resolveProvider(prisma, 'sara@eventy.com');
-  const omarProv = await resolveProvider(prisma, 'omar@eventy.com');
+  const omarProv = await resolveProvider(prisma, 'Amar@eventy.com');
   const yousefProv = await resolveProvider(prisma, 'yousef@eventy.com');
   const nourProv = await resolveProvider(prisma, 'nour@eventy.com');
   const mayaProv = await resolveProvider(prisma, 'maya@eventy.com');

@@ -1,19 +1,21 @@
 // src/modules/packages/dto/book-package.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, IsUUID, Min } from 'class-validator';
+import {
+  IsArray,
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  ValidateNested,
+  ArrayMinSize
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { EventType } from '@prisma/client';
 import { IsTodayOrFuture } from 'src/common/validators/future-date.validator';
+import {ServiceSelectionDto } from 'src/modules/event/dto/create-event.dto';
 
-/**
- * Customer request to book an entire exclusive package
- * (docs/implementation_plan.md §3, customer endpoint
- * `POST /api/v1/packages/exclusive/:id/book`).
- *
- * A new Event is created in DRAFT status and a PackageEventBooking in
- * PENDING — per implementation_plan.md §6 (Option A: keep DRAFT, no new
- * PENDING status on Event).
- */
 export class BookPackageDto {
   @ApiProperty({ example: "Sarah's Wedding" })
   @IsString()
@@ -23,7 +25,7 @@ export class BookPackageDto {
   @IsEnum(EventType)
   eventType: EventType;
 
-  @ApiProperty({ example: '2026-08-15T00:00:00Z' })
+  @ApiProperty({ example: '2026-08-25T00:00:00Z' })
   @IsDateString()
   @IsTodayOrFuture({ message: 'Event date cannot be in the past' })
   eventDate: string;
@@ -52,6 +54,20 @@ export class BookPackageDto {
   @IsOptional()
   @IsString()
   customerNotes?: string;
+
+ @ApiProperty({
+    type: [ServiceSelectionDto],
+    description:
+      'One selection per ACTIVE package service — the set of serviceId values must exactly ' +
+      'match this package\'s currently active services (no partial booking, no extras). ' +
+      'HALL/SOUND services must send items: [] ; FOOD/PHOTOGRAPHY/FAVORS/DECORATION must ' +
+      'send at least one sub-service item with a quantity.',
+  })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ServiceSelectionDto)
+  services: ServiceSelectionDto[];
 
   @ApiPropertyOptional({
     example: 'do not send any code across the system',

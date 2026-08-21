@@ -212,6 +212,26 @@ private async assertCommonTimeWindow(serviceIds: string[]) {
     throw new BadRequestException('The selected services have no common available day/time window');
   }
 }
+
+// src/modules/packages/packages.service.ts
+// إضافة helper جديد بجانب assertOwnerHasPackagedHallAmong / assertNoDuplicatePackageServiceSet
+
+private assertNoDuplicateServiceTypes(
+  services: { serviceType: { name: string } }[],
+): void {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const s of services) {
+    const typeName = s.serviceType.name;
+    if (seen.has(typeName)) duplicates.add(typeName);
+    seen.add(typeName);
+  }
+  if (duplicates.size > 0) {
+    throw new BadRequestException(
+      `A package cannot contain more than one service of the same type: ${[...duplicates].join(', ')}`,
+    );
+  }
+}
   // ════════════════════════════════════════════════════════════════════
   // PROVIDER — package authoring
   // ════════════════════════════════════════════════════════════════════
@@ -240,6 +260,7 @@ async createPackage(userId: string, dto: CreatePackageDto) {
     const missing = serviceIds.filter((id) => !found.has(id));
     throw new BadRequestException(`Services not found or not active: ${missing.join(', ')}`);
   }
+  this.assertNoDuplicateServiceTypes(services);
 
  // 2) يجب أن تكون إحدى الخدمات المُرسلة نفسها Hall مملوكة للمزود الحالي وبـ isPackaged = true
 await this.assertOwnerHasPackagedHallAmong(provider.id, serviceIds);
@@ -425,6 +446,13 @@ async updatePackage(userId: string, packageId: string, dto: UpdatePackageDto) {
     if (finalServiceIds.length < 2) {
       throw new BadRequestException('A package requires at least 2 services');
     }
+    // ✅ جديد: بناء القائمة النهائية بأسماء أنواعها والتحقق من عدم التكرار
+    const keptServices = currentServices.filter((s) => !removeIds.includes(s.serviceId));
+    const finalServicesForTypeCheck = [
+      ...keptServices.map((s) => ({ serviceType: { name: s.service.serviceType.name } })),
+      ...addedServices.map((s) => ({ serviceType: { name: s.serviceType.name } })),
+    ];
+    this.assertNoDuplicateServiceTypes(finalServicesForTypeCheck);
     await this.assertOwnerHasPackagedHallAmong(provider.id, finalServiceIds);
     await this.assertNoDuplicatePackageServiceSet(finalServiceIds, packageId);
     await this.assertCommonTimeWindow(finalServiceIds);
@@ -1006,6 +1034,7 @@ private async cancelOwnedPackage(
     packageId: pb.packageId,
     packageName: pb.package.name,
     packageEventBookingId,
+    eventId: pb.eventId ?? undefined,
   });
 
   return {
@@ -1061,6 +1090,7 @@ private async cancelOwnedPackage(
       packageName: pb.package.name,
       packageEventBookingId,
       rejectionReason: reason,
+      eventId: pb.eventId ?? undefined,
     });
 
     return { message: 'Package booking rejected', data: { id: packageEventBookingId, status: 'REJECTED' } };
@@ -1093,6 +1123,7 @@ private async cancelOwnedPackage(
       packageName: pb.package.name,
       packageEventBookingId,
       amount: pb.totalAmount,
+      eventId: pb.eventId ?? undefined,
     });
   }
 
@@ -1306,7 +1337,7 @@ private async cancelOwnedPackage(
     const endOfDay = new Date(eventDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const ACTIVE_BOOKING_STATUSES = ['PENDING', 'QUOTE_SENT', 'CONFIRMED', 'IN_PROGRESS', 'COMPLETED'];
+    const ACTIVE_BOOKING_STATUSES = ['PENDING', 'QUOTE_SENT', 'CONFIRMED', 'IN_PROGRESS'];
 
     // Per-service structural validation (day / working-hours / slot bounds) —
     // safe to run before the transaction, depends only on static definitions.
@@ -1610,6 +1641,7 @@ private async cancelOwnedPackage(
       packageName: pkg.name,
       packageEventBookingId: result.packageEventBooking.id,
       eventDate: result.event.eventDate,
+      eventId: result.event.id,
     });
 
     return {
@@ -1708,6 +1740,7 @@ async payPackageBooking(userId: string, packageEventBookingId: string, dto: PayP
         packageName: pb.package.name,
         packageEventBookingId,
         amount: pb.totalAmount,
+        eventId: pb.eventId ?? undefined,
       });
     }
     return { message: 'Bank transfer confirmed — booking is now in progress', data: paid };
@@ -1727,6 +1760,7 @@ async payPackageBooking(userId: string, packageEventBookingId: string, dto: PayP
     packageName: pb.package.name,
     packageEventBookingId,
     amount: pb.totalAmount,
+    eventId: pb.eventId ?? undefined,
   });
 
   return {
@@ -1777,6 +1811,7 @@ async confirmPackageCardPayment(userId: string, packageEventBookingId: string) {
       packageName: pb.package.name,
       packageEventBookingId,
       amount: pb.totalAmount,
+    eventId: pb.eventId ?? undefined,
     });
   }
 
@@ -1871,6 +1906,8 @@ private async progressPackageToInProgress(packageEventBookingId: string) {
       packageName: pb.package.name,
       packageEventBookingId,
       amount: pb.totalAmount,
+    eventId: pb.eventId ?? undefined,
+
     });
   }
 

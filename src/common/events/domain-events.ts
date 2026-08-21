@@ -104,12 +104,14 @@ export interface UserUnblockedPayload extends BaseDomainEventPayload {}
 
 export interface BookingCreatedPayload extends BaseDomainEventPayload {
   bookingId: string;
+   eventId?: string;
   serviceName: string;
   eventDate: Date;
 }
 
 export interface BookingAcceptedPayload extends BaseDomainEventPayload {
   bookingId: string;
+   eventId?: string;
   serviceName: string;
   eventDate: Date;
   /** Human-readable payment method label for provider notifications */
@@ -118,17 +120,20 @@ export interface BookingAcceptedPayload extends BaseDomainEventPayload {
 
 export interface BookingRejectedPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   serviceName: string;
   rejectionReason?: string;
 }
 
 export interface BookingCompletedPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   serviceName: string;
 }
 
 export interface BookingCancelledPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   serviceName: string;
    reason?: string;
 }
@@ -165,17 +170,20 @@ export interface ServiceRejectedPayload extends BaseDomainEventPayload {
 
 export interface PaymentConfirmedPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   amount: number;
 }
 
 export interface PaymentFailedPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   amount: number;
   failureReason?: string;
 }
 
 export interface BookingQuoteSentPayload extends BaseDomainEventPayload {
   bookingId: string;
+  eventId?: string;
   serviceName: string;
   eventDate: Date;
 }
@@ -221,6 +229,7 @@ export interface PackagePartnerLeftPayload extends BaseDomainEventPayload {
 
 export interface PackageBookingRequestedPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
   customerName?: string;
@@ -229,12 +238,14 @@ export interface PackageBookingRequestedPayload extends BaseDomainEventPayload {
 
 export interface PackageBookingAcceptedPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
 }
 
 export interface PackageBookingRejectedPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
   rejectionReason?: string;
@@ -242,6 +253,7 @@ export interface PackageBookingRejectedPayload extends BaseDomainEventPayload {
 
 export interface PackagePaymentCashChosenPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
   amount?: number;
@@ -249,6 +261,7 @@ export interface PackagePaymentCashChosenPayload extends BaseDomainEventPayload 
 
 export interface PackagePaymentConfirmedPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
   amount?: number;
@@ -261,12 +274,14 @@ export interface PackageJoinExpiredPayload extends BaseDomainEventPayload {
 
 export interface PackageBookingExpiredPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
 }
 
 export interface PackagePaymentExpiredPayload extends BaseDomainEventPayload {
   packageId: string;
+  eventId?: string;
   packageName: string;
   packageEventBookingId: string;
 }

@@ -169,10 +169,11 @@ export class AuthController {
     return this.authService.googleLogin(req.user);
   }
 
+@UseGuards(JwtAuthGuard)
 @Patch('profile')
 @UseInterceptors(FileInterceptor('profileImage'))
 @ApiConsumes('multipart/form-data')
-@ApiBearerAuth()
+@ApiBearerAuth('JWT-auth')
 @ApiOperation({ summary: 'Update user profile information' })
 @ApiBody({
   schema: {
@@ -208,7 +209,7 @@ async updateProfile(
   @UploadedFile() profileImage?: Express.Multer.File,
 ) {
   return this.authService.updateUserProfile(
-    req.user.id,
+    req.user.sub,
     dto,
     profileImage,
   );

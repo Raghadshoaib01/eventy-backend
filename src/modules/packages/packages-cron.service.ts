@@ -165,6 +165,7 @@ private async completeFinishedPackageBookings(): Promise<void> {
         packageId: pb.packageId,
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
+        eventId: pb.eventId ?? undefined,
       });
       this.domainEventBus.packageBookingExpired({
         actorId: 'SYSTEM',
@@ -173,6 +174,7 @@ private async completeFinishedPackageBookings(): Promise<void> {
         packageId: pb.packageId,
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
+        eventId: pb.eventId ?? undefined,
       });
     }
 
@@ -228,6 +230,7 @@ private async completeFinishedPackageBookings(): Promise<void> {
         packageId: pb.packageId,
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
+        eventId: pb.eventId ?? undefined,
       });
       this.domainEventBus.packagePaymentExpired({
         actorId: 'SYSTEM',
@@ -236,6 +239,7 @@ private async completeFinishedPackageBookings(): Promise<void> {
         packageId: pb.packageId,
         packageName: pb.package.name,
         packageEventBookingId: pb.id,
+        eventId: pb.eventId ?? undefined,
       });
     }
 

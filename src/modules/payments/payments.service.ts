@@ -174,6 +174,7 @@ async confirmPayment(userId: string, paymentId: string) {
         bookingId: booking.id,
         amount: payment.amount,
         failureReason: result.failureReason,
+        eventId: booking.eventId ?? undefined,
       });
     }
 
@@ -256,6 +257,7 @@ async confirmPayment(userId: string, paymentId: string) {
       entityId: paid.id,
       bookingId: booking.id,
       amount: paid.amount,
+      eventId: booking.eventId ?? undefined,
     });
     this.domainEventBus.paymentConfirmed({
       actorId: paid.payerId,
@@ -263,6 +265,7 @@ async confirmPayment(userId: string, paymentId: string) {
       entityId: paid.id,
       bookingId: booking.id,
       amount: paid.amount,
+      eventId: booking.eventId ?? undefined,
     });
 
     // Payment is a real gate on progression (docs §4, §7) — re-evaluate

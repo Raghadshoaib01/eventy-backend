@@ -120,6 +120,7 @@ export class BookingsService {
       bookingId,
       serviceName: booking.service.serviceType.name,
       eventDate: booking.event.eventDate,
+      eventId: booking.eventId ?? undefined,
     });
 
     const message = 'Quote confirmed successfully';
@@ -214,6 +215,7 @@ export class BookingsService {
       bookingId,
       serviceName: booking.service.serviceType.name,
       rejectionReason: 'Customer rejected the quote',
+      eventId: booking.eventId ?? undefined,
     });
 
     // Notify customer if the whole event was cancelled as a result
@@ -391,6 +393,7 @@ export class BookingsService {
         actorId: customerId,
         targetUserId: booking.provider.user.id,
         entityId: booking.id,
+        eventId: booking.eventId ?? undefined,
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
         eventDate: event.eventDate,
@@ -404,6 +407,7 @@ export class BookingsService {
         actorId: customerId,
         targetUserId: booking.provider.user.id,
         entityId: booking.id,
+        eventId: booking.eventId ?? undefined,
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
         rejectionReason: rejectionNotificationReason || 'Customer rejected the quote',
@@ -522,6 +526,7 @@ export class BookingsService {
       targetUserId: booking.provider.user.id,
       entityId: booking.id,
       bookingId: booking.id,
+      eventId: booking.eventId ?? undefined,
       serviceName: booking.service.serviceType.name,
       eventDate: event.eventDate,
     });

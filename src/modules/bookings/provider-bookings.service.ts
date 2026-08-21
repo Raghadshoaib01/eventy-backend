@@ -215,6 +215,7 @@ export class ProviderBookingsService {
       bookingId,
       serviceName: booking.service.serviceType.name,
       eventDate: booking.event!.eventDate,
+      eventId: booking.eventId ?? undefined,
     });
 
     return {
@@ -261,6 +262,7 @@ export class ProviderBookingsService {
       entityId: bookingId,
       bookingId,
       serviceName: booking.service.serviceType.name,
+      eventId: booking.eventId ?? undefined,
     });
 
     return { message: 'Booking marked as completed', data: { bookingId, status: 'COMPLETED' } };
@@ -294,6 +296,7 @@ export class ProviderBookingsService {
       entityId: bookingId,
       bookingId,
       serviceName: booking.service.serviceType.name,
+      eventId: booking.eventId ?? undefined,
     });
 
     return { message: 'Booking rejected successfully', data: { bookingId, status: 'REJECTED' } };

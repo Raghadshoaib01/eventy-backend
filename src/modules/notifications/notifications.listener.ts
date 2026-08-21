@@ -127,6 +127,7 @@ export class NotificationsListener {
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         customerUserId: payload.actorId,
         serviceType: payload.serviceName,
@@ -145,6 +146,7 @@ export class NotificationsListener {
       metadata: {
         screen: 'booking-quote',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         customerUserId: payload.targetUserId,
         providerUserId: payload.actorId,
         serviceType: payload.serviceName,
@@ -169,6 +171,7 @@ export class NotificationsListener {
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         customerUserId: payload.actorId,
         serviceType: payload.serviceName,
@@ -190,6 +193,7 @@ export class NotificationsListener {
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         customerUserId: payload.actorId,
         serviceType: payload.serviceName,
@@ -209,6 +213,7 @@ export class NotificationsListener {
         // deep-links to the review prompt (docs/reviews-implementation-plan.md §3)
         screen: 'leave-review',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         targetUserId: payload.targetUserId,
         serviceType: payload.serviceName,
       },
@@ -227,6 +232,7 @@ export class NotificationsListener {
       metadata: {
         screen: 'booking-details',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         targetUserId: payload.targetUserId,
         serviceType: payload.serviceName,
         reason: payload.reason,
@@ -483,6 +489,7 @@ export class NotificationsListener {
         screen: 'package-booking-details',
         packageId: payload.packageId,
         packageEventBookingId: payload.packageEventBookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
         packageName: payload.packageName,
@@ -503,6 +510,7 @@ export class NotificationsListener {
         screen: 'package-booking-details',
         packageId: payload.packageId,
         packageEventBookingId: payload.packageEventBookingId,
+        eventId: payload.eventId,
         customerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
         packageName: payload.packageName,
@@ -523,6 +531,7 @@ export class NotificationsListener {
         screen: 'package-booking-details',
         packageId: payload.packageId,
         packageEventBookingId: payload.packageEventBookingId,
+        eventId: payload.eventId,
         customerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
         packageName: payload.packageName,
@@ -544,6 +553,7 @@ export class NotificationsListener {
         screen: 'package-booking-payment',
         packageId: payload.packageId,
         packageEventBookingId: payload.packageEventBookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
         packageName: payload.packageName,
@@ -565,6 +575,7 @@ export class NotificationsListener {
         screen: 'package-booking-payment',
         packageId: payload.packageId,
         packageEventBookingId: payload.packageEventBookingId,
+        eventId: payload.eventId,
         providerUserId: payload.targetUserId,
         actorUserId: payload.actorId,
         packageName: payload.packageName,
@@ -591,7 +602,7 @@ async handlePackageBookingExpired(payload: PackageBookingExpiredPayload): Promis
     type: NotificationType.PACKAGE_BOOKING_EXPIRED,
     title: 'Package Booking Request Expired',
     body: `The booking request for "${payload.packageName}" expired after 48 hours without a response.`,
-    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId },
+    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId,eventId: payload.eventId, },
   });
 }
 
@@ -602,7 +613,7 @@ async handlePackagePaymentExpired(payload: PackagePaymentExpiredPayload): Promis
     type: NotificationType.PACKAGE_PAYMENT_EXPIRED,
     title: 'Payment Window Expired',
     body: `The payment window for "${payload.packageName}" expired and the booking was cancelled.`,
-    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId },
+    metadata: { screen: 'package-booking-details', packageId: payload.packageId, packageEventBookingId: payload.packageEventBookingId,eventId: payload.eventId },
   });
 }
 
@@ -745,6 +756,7 @@ async handlePackageCancelled(payload: PackageCancelledPayload): Promise<void> {
       metadata: {
         screen: 'booking-payment',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         customerUserId: payload.targetUserId,
         amount: payload.amount,
       },
@@ -763,6 +775,7 @@ async handlePackageCancelled(payload: PackageCancelledPayload): Promise<void> {
       metadata: {
         screen: 'booking-payment',
         bookingId: payload.bookingId,
+        eventId: payload.eventId,
         customerUserId: payload.targetUserId,
         amount: payload.amount,
         failureReason: payload.failureReason,

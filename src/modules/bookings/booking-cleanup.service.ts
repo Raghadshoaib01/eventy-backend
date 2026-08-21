@@ -73,6 +73,7 @@ export class BookingCleanupService {
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
         reason: reasons.customer,
+        eventId: booking.eventId ?? undefined,
       });
       this.domainEventBus.bookingCancelled({
         actorId: booking.customerId,
@@ -81,6 +82,7 @@ export class BookingCleanupService {
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
         reason: reasons.provider,
+        eventId: booking.eventId ?? undefined,
       });
     }
 

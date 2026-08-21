@@ -402,6 +402,7 @@ export class EventService {
         bookingId: booking.id,
         serviceName,
         eventDate,
+        eventId: result.event.id,
       });
     }
 
@@ -800,6 +801,7 @@ export class EventService {
       bookingId: booking.id,
       serviceName: svc.serviceType.name,
       eventDate: event.eventDate,
+      eventId,
     });
 
     return { message: 'Service added to event successfully — awaiting provider response', data: booking };
@@ -883,6 +885,7 @@ export class EventService {
         entityId: booking.id,
         bookingId: booking.id,
         serviceName: booking.service.serviceType.name,
+        eventId,
         reason: reason
           ? `The customer cancelled the event. Reason: ${reason}`
           : 'The customer cancelled the event.',

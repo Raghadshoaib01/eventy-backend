@@ -72,7 +72,7 @@ export class StripePaymentGatewayService implements PaymentGatewayService, OnMod
     const intent = await this.stripe.paymentIntents.create({
       amount: amountInCents,
       currency: this.currency,
-      automatic_payment_methods: { enabled: true },
+      automatic_payment_methods: { enabled: true,allow_redirects: 'never' },
       metadata: { eventyPaymentId: payment.id },
     
     });

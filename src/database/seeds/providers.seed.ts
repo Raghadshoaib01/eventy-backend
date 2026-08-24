@@ -432,6 +432,7 @@ const PROVIDERS: ProviderDef[] = [
       },
     ],
   },
+  
   {
     fullName: 'Dana Freihat',
     email: 'dana@eventy.com',

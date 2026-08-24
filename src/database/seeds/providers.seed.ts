@@ -92,7 +92,7 @@ const PROVIDERS: ProviderDef[] = [
         serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1783165071/eventy/services/jow8wiibvcwjys6tprwe.jpg',
         eventTypes: [EventType.WEDDING, EventType.GRADUATION, EventType.ENGAGEMENT, EventType.BIRTHDAY, EventType.ALL_EVENTS],
         availability: [
-          { workFromTime: '09:00', workToTime: '22:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
+          { workFromTime: '09:00', workToTime: '24:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
         ],
         subServices: [
           { name: 'Deluxe Cassita Platter', description: 'Premium deluxe cassita platter.', pricePerUnit: 18.0, unitType: 'ITEM', dailyCapacity: 500,
@@ -119,7 +119,7 @@ const PROVIDERS: ProviderDef[] = [
         isPackaged:true,
         eventTypes: [EventType.WEDDING, EventType.GRADUATION, EventType.ENGAGEMENT, EventType.BIRTHDAY, EventType.ALL_EVENTS],
         availability: [
-          { workFromTime: '09:00', workToTime: '22:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
+          { workFromTime: '09:00', workToTime: '24:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
         ],
         fileUrls:[
           {
@@ -154,7 +154,7 @@ const PROVIDERS: ProviderDef[] = [
         description: 'Authentic Jordanian home-style cooking.',
         serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787534982/photo_2026-08-24_04-24-37_fgcttj.jpg',
         eventTypes: [EventType.WEDDING, EventType.BABY_SHOWER, EventType.BIRTHDAY, EventType.ALL_EVENTS],
-        availability: [{ workFromTime: '08:00', workToTime: '21:00', capacity: 600, hasSlots: false, days: ALL_DAYS }],
+        availability: [{ workFromTime: '08:00', workToTime: '24:00', capacity: 600, hasSlots: false, days: ALL_DAYS }],
         subServices: [
           { name: 'Mansaf (Large Tray)', description: 'Traditional Jordanian mansaf.', pricePerUnit: 45.0, unitType: 'ITEM', dailyCapacity: 100,
              mediaUrls: [
@@ -178,7 +178,7 @@ const PROVIDERS: ProviderDef[] = [
         minCapacity: 100,
         maxCapacity: 600,
         price: 3000.0,
-        availability: [{ workFromTime: '10:00', workToTime: '02:00', capacity: 3, hasSlots: false, days: ALL_DAYS }],
+        availability: [{ workFromTime: '08:00', workToTime: '24:00', capacity: 3, hasSlots: false, days: ALL_DAYS }],
         fileUrls:[
           {
         url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174748/2fb42d09a6801fe3a21b0b97cc03adbf_ak56pj.jpg',
@@ -247,7 +247,7 @@ const PROVIDERS: ProviderDef[] = [
         description: 'Creative event photography focused on storytelling.',
         serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787535326/142373755470d869b67c30eb1e9dbdc5_hbegfo.jpg',
         eventTypes: [EventType.BIRTHDAY, EventType.GRADUATION, EventType.CONFERENCE, EventType.ALL_EVENTS],
-        availability: [{ workFromTime: '10:00', workToTime: '22:00', capacity: 2, hasSlots: false, days: ALL_DAYS }],
+        availability: [{ workFromTime: '10:00', workToTime: '24:00', capacity: 2, hasSlots: false, days: ALL_DAYS }],
         subServices: [
           { name: 'Photobooth Package', description: 'Instant-print photobooth.', pricePerUnit: 200.0, unitType: 'ITEM', dailyCapacity: 1,
              mediaUrls: [
@@ -277,7 +277,7 @@ const PROVIDERS: ProviderDef[] = [
         description: 'Custom wedding and event favours.',
         serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787536016/74b8dc40fda191f72a7fd86636c442c2_cpwbwd.jpg',
         eventTypes: [EventType.WEDDING, EventType.ENGAGEMENT, EventType.BABY_SHOWER, EventType.BIRTHDAY],
-        availability: [{ workFromTime: '09:00', workToTime: '18:00', capacity: 500, hasSlots: false, days: WEEKDAYS }],
+        availability: [{ workFromTime: '09:00', workToTime: '24:00', capacity: 500, hasSlots: false, days: WEEKDAYS }],
         subServices: [
          { name: 'blue pen', description: 'nice blue pen', pricePerUnit: 4, unitType: 'ITEM', dailyCapacity: 500,
            mediaUrls: [
@@ -312,7 +312,7 @@ const PROVIDERS: ProviderDef[] = [
         description: 'Luxury event decoration including floral installations and lighting.',
         serviceLogo:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174806/b3e225e3d198c67e3cbc4c2c71d748de_jbamkg.jpg',
         eventTypes: [EventType.WEDDING, EventType.ENGAGEMENT, EventType.GRADUATION, EventType.ALL_EVENTS],
-        availability: [{ workFromTime: '08:00', workToTime: '22:00', capacity: 4, hasSlots: false, days: ALL_DAYS }],
+        availability: [{ workFromTime: '08:00', workToTime: '24:00', capacity: 4, hasSlots: false, days: ALL_DAYS }],
         subServices: [
           { name: 'Floral Backdrop Wall', description: 'Custom 3×3 m floral wall.', pricePerUnit: 350.0, unitType: 'ITEM', dailyCapacity: 2,
              mediaUrls: [
@@ -353,7 +353,7 @@ const PROVIDERS: ProviderDef[] = [
         minCapacity: 100,
         maxCapacity: 800,
         price: 2500.0,
-        availability: [{ workFromTime: '10:00', workToTime: '02:00', capacity: 2, hasSlots: false, days: ALL_DAYS }
+        availability: [{ workFromTime: '09:00', workToTime: '24:00', capacity: 2, hasSlots: false, days: ALL_DAYS }
         ],
         fileUrls:[
           {
@@ -369,7 +369,7 @@ const PROVIDERS: ProviderDef[] = [
       },
     ],
   },
-  
+
   {
     fullName: 'Yousef Qasim',
     email: 'yousef@eventy.com',
@@ -390,7 +390,7 @@ const PROVIDERS: ProviderDef[] = [
         eventTypes: [EventType.WEDDING, EventType.BIRTHDAY, EventType.CONFERENCE, EventType.ALL_EVENTS],
         isPackaged: false,
         price: 800.0,
-        availability: [{ workFromTime: '12:00', workToTime: '03:00', capacity: 3, hasSlots: false, days: ALL_DAYS }],
+        availability: [{ workFromTime: '08:00', workToTime: '24:00', capacity: 3, hasSlots: false, days: ALL_DAYS }],
         fileUrls:[
           {
         url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787537946/2db79fad8cfc6b58b0df493f95cf7c62_to9tx1.jpg',

@@ -369,6 +369,7 @@ const PROVIDERS: ProviderDef[] = [
       },
     ],
   },
+  
   {
     fullName: 'Yousef Qasim',
     email: 'yousef@eventy.com',

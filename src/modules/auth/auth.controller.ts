@@ -35,6 +35,7 @@ import { GoogleAuthGuard } from 'src/common/guards/google-auth.guard';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { Throttle } from '@nestjs/throttler';
 
 @ApiTags('1-Auth')
 @Controller('auth')
@@ -74,6 +75,7 @@ export class AuthController {
 
   //2 POST /api/v1/auth/verify-otp
   @Post('verify-otp')
+  @Throttle({ default: { limit: 5, ttl: 900000 } }) // 5 req/15min
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify OTP and activate account' })
   @ApiResponse({ status: 200, description: 'Returns access & refresh tokens' })
@@ -84,6 +86,7 @@ export class AuthController {
 
   //3 POST /api/v1/auth/resend-otp
   @Post('resend-otp')
+  @Throttle({ default: { limit: 3, ttl: 900000 } }) // 3 req/15min
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resend OTP to email' })
   @ApiResponse({ status: 200, description: 'New OTP sent' })
@@ -94,6 +97,7 @@ export class AuthController {
 
   //4 POST /api/v1/auth/login
   @Post('login')
+  @Throttle({ default: { limit: 10, ttl: 900000 } }) // 10 req/15min
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Returns access & refresh tokens' })

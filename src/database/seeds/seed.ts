@@ -51,41 +51,41 @@ async function main() {
   console.log('\n── [3/12] Seeding Customers ──');
   const customers = await seedCustomers(prisma);
 
-  // ── Step 4: Events + Bookings ────────────────────────────────────────────────
-  console.log('\n── [4/12] Seeding Events & Bookings ──');
-  const events = await seedEvents(prisma, customers);
+  // // ── Step 4: Events + Bookings ────────────────────────────────────────────────
+  // console.log('\n── [4/12] Seeding Events & Bookings ──');
+  // const events = await seedEvents(prisma, customers);
 
-  // ── Step 5: Notifications ────────────────────────────────────────────────────
-  console.log('\n── [5/12] Seeding Notifications ──');
-  await seedNotifications(prisma, { events, providers });
+  // // ── Step 5: Notifications ────────────────────────────────────────────────────
+  // console.log('\n── [5/12] Seeding Notifications ──');
+  // await seedNotifications(prisma, { events, providers });
 
-  // ── Step 6: Blocked Slots ────────────────────────────────────────────────────
-  console.log('\n── [6/12] Seeding Blocked Slots ──');
-  await seedBlockedSlots(prisma);
+  // // ── Step 6: Blocked Slots ────────────────────────────────────────────────────
+  // console.log('\n── [6/12] Seeding Blocked Slots ──');
+  // await seedBlockedSlots(prisma);
 
-  // ── Step 7: Packages + Package Bookings ─────────────────────────────────────
-  console.log('\n── [7/12] Seeding Packages & Package Bookings ──');
-  const packages = await seedPackages(prisma, customers);
+  // // ── Step 7: Packages + Package Bookings ─────────────────────────────────────
+  // console.log('\n── [7/12] Seeding Packages & Package Bookings ──');
+  // const packages = await seedPackages(prisma, customers);
 
-  // ── Step 8: Discounts ────────────────────────────────────────────────────────
-  console.log('\n── [8/12] Seeding Discounts ──');
-  const discounts = await seedDiscounts(prisma, packages);
+  // // ── Step 8: Discounts ────────────────────────────────────────────────────────
+  // console.log('\n── [8/12] Seeding Discounts ──');
+  // const discounts = await seedDiscounts(prisma, packages);
 
-  // ── Step 9: Payments ─────────────────────────────────────────────────────────
-  console.log('\n── [9/12] Seeding Payments ──');
-  await seedPayments(prisma, events, discounts);
+  // // ── Step 9: Payments ─────────────────────────────────────────────────────────
+  // console.log('\n── [9/12] Seeding Payments ──');
+  // await seedPayments(prisma, events, discounts);
 
-  // ── Step 10: Favorites ───────────────────────────────────────────────────────
-  console.log('\n── [10/12] Seeding Favorites ──');
-  await seedFavorites(prisma, customers, packages);
+  // // ── Step 10: Favorites ───────────────────────────────────────────────────────
+  // console.log('\n── [10/12] Seeding Favorites ──');
+  // await seedFavorites(prisma, customers, packages);
 
-  // ── Step 11: Reviews ─────────────────────────────────────────────────────────
-  console.log('\n── [11/12] Seeding Reviews & Ratings ──');
-  await seedReviews(prisma, events, customers);
+  // // ── Step 11: Reviews ─────────────────────────────────────────────────────────
+  // console.log('\n── [11/12] Seeding Reviews & Ratings ──');
+  // await seedReviews(prisma, events, customers);
 
-  // ── Step 12: Complaints ──────────────────────────────────────────────────────
-  console.log('\n── [12/12] Seeding Complaints ──');
-  await seedComplaints(prisma, customers, events, packages);
+  // // ── Step 12: Complaints ──────────────────────────────────────────────────────
+  // console.log('\n── [12/12] Seeding Complaints ──');
+  // await seedComplaints(prisma, customers, events, packages);
 
   // ── Summary ──────────────────────────────────────────────────────────────────
   console.log('\n══════════════════════════════════════════');

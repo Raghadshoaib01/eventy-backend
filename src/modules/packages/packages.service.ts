@@ -1448,6 +1448,18 @@ private async cancelOwnedPackage(
     // atomically if any single service's availability changed underneath us.
     const result = await this.prisma.$transaction(
       async (tx) => {
+        const existingActive = await tx.packageEventBooking.findFirst({
+      where: {
+        packageId: pkg.id,
+        customerId,
+        status: { in: ['PENDING', 'CONFIRMED', 'PENDING_PAYMENT', 'IN_PROGRESS'] },
+      },
+    });
+    if (existingActive) {
+      throw new ConflictException(
+        'You already have an active booking request for this package. Cancel it before creating a new one.',
+      );
+    }
         const event = await tx.event.create({
           data: {
             customerId,

@@ -268,17 +268,11 @@ async confirmPayment(userId: string, paymentId: string) {
       eventId: booking.eventId ?? undefined,
     });
 
-    // Payment is a real gate on progression (docs §4, §7) — re-evaluate
-    // whether the booking can now move to IN_PROGRESS. A package-sourced
-    // booking progresses with its PackageBooking siblings, not with
-    // whatever else happens to share its (optional) eventId — those are two
-    // different "wait for everyone" groups (docs/implementation_plan.md §3,
-    // §6.3).
     if (booking.packageEventBookingId) {
       await this.packagesService.tryProgressPackageBooking(booking.packageEventBookingId);
     }
      else if (booking.eventId) {
-      await this.bookingsService.tryProgressEvent(booking.eventId);
+      await this.bookingsService.progressBookingAndEvent(booking.eventId, booking.eventId);
     }
 
     return paid;

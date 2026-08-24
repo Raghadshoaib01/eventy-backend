@@ -5,6 +5,8 @@ import { Controller, HttpCode, HttpStatus, Param, Patch, Request, UseGuards } fr
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { PaymentsService } from '../payments.service';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import { AuditAction } from '@prisma/client';
 
 /**
  * Provider-facing Payments API (docs/payments-implementation-plan.md §6.2).
@@ -23,6 +25,7 @@ export class ProviderPaymentsController {
   constructor(private readonly paymentsService: PaymentsService) {}
 
   @Patch(':id/mark-cash-paid')
+  @Audit({ action: AuditAction.UPDATE, entity: 'Payment', entityIdKey: 'id' })
   @HttpCode(HttpStatus.OK)
   @ApiParam({ name: 'id', description: 'Payment ID — works for both a regular booking payment and a package booking payment' })
   @ApiOperation({

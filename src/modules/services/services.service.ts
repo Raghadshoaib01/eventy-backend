@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   BadRequestException,
   ConflictException,
+  Inject
 } from '@nestjs/common';
 import { PrismaService } from 'src/database/prisma.service';
 import { CreateServiceDto } from './dto/create-service.dto';
@@ -15,6 +16,8 @@ import { CloudinaryService } from 'src/shared/services/cloudinary.service';
 import { EngagementService } from 'src/shared/services/engagement.service';
 import { ServiceStatus, FileType, DayOfWeek, Discount } from '@prisma/client';
 import { DomainEventBus } from 'src/common/events/domain-event-bus';
+import { CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 
 import { DiscountsService } from '../discounts/discounts.service';
 
@@ -25,6 +28,7 @@ export class ServicesService {
         private readonly engagementService: EngagementService,
         private readonly domainEventBus: DomainEventBus,
         private readonly discountsService: DiscountsService,
+        @Inject(CACHE_MANAGER) private cache: Cache,
   ) {}
 
 // ========================
@@ -298,7 +302,7 @@ async getServiceById(
   const isOwner   = user.provider?.id === service.providerId;
   // package-exclusive services are never independently visible, even to a
   // customer who guesses/shares the URL (docs/packages-implementation-plan.md §6)
-  const isPublic  = service.approvalStatus === 'ACTIVE' && !service.isPackaged;
+  const isPublic  = service.approvalStatus === 'ACTIVE' ;
 
   if (!isAdmin && !isOwner && !isPublic) {
     throw new NotFoundException('Service not found');
@@ -689,6 +693,16 @@ if (date) {
   // ========================
 // ── الدالة الأولى ──────────────────────────────────────
 async getAllServiceTypes() {
+    const cacheKey = 'service-types';
+      const cached = await this.cache.get<string>(cacheKey);
+
+      if (cached) {
+        console.log('cach works')
+    return {
+      message: 'Service types retrieved successfully',
+      data: JSON.parse(cached),
+    };
+  }
   const types = await this.prisma.serviceType.findMany({
     orderBy: { name: 'asc' },
     select: {
@@ -698,6 +712,12 @@ async getAllServiceTypes() {
       _count: { select: { services: true } },
     },
   });
+  // 3. تخزين النتيجة في Redis لمدة ساعة
+  await this.cache.set(
+    cacheKey,
+    JSON.stringify(types),
+    60 * 60 * 1000,
+  );
 
   return {
     message: 'Service types retrieved successfully',
@@ -723,7 +743,7 @@ async createServiceType(dto: CreateServiceTypeDto) {
       description: dto.description,
     },
   });
-
+  await this.cache.del('service-types');
   return {
     message: 'Service type created successfully',
     data: type,
@@ -743,6 +763,7 @@ async updateServiceType(typeId: string, dto: { description?: string; isVenue?: b
       requiresDeliveryByDefault: dto.requiresDeliveryByDefault,
     },
   });
+  await this.cache.del('service-types');
 
   return { message: 'Service type updated successfully', data: updated };
 }
@@ -767,7 +788,7 @@ async deleteServiceType(typeId: string) {
   }
 
   await this.prisma.serviceType.delete({ where: { id: typeId } });
-
+await this.cache.del('service-types');
   return {
     message: 'Service type deleted successfully',
     data: null,

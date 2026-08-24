@@ -33,28 +33,6 @@ export class StripePaymentGatewayService implements PaymentGatewayService, OnMod
     // يمكن تركها للوجز فقط
   }
 
-  // onModuleInit(): void {
-  //   const secretKey = this.config.get<string>('STRIPE_SECRET_KEY');
-  //   this.currency = this.config.get<string>('STRIPE_CURRENCY') ?? 'usd';
-  //   console.log('Stripe key exists:', !!secretKey);
-  //   console.log('Stripe key prefix:', secretKey?.slice(0, 8));
-
-  //   if (!secretKey) {
-  //     this.logger.warn(
-  //       '[StripeGateway] STRIPE_SECRET_KEY not set — falling back to mock gateway.',
-  //     );
-  //     return;
-  //   }
-
-  //   try {
-  //     this.stripe = new Stripe(secretKey,);
-  //     this._isAvailable = true;
-  //     this.logger.log('[StripeGateway] Initialised successfully (test mode).');
-  //   } catch (err: unknown) {
-  //     const message = err instanceof Error ? err.message : String(err);
-  //     this.logger.error(`[StripeGateway] Initialisation failed: ${message}`);
-  //   }
-  // }
 
   get isAvailable(): boolean {
     return this._isAvailable;

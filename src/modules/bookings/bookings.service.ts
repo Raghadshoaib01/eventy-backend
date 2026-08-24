@@ -426,8 +426,10 @@ export class BookingsService {
     }
 
     if (method === 'BANK_TRANSFER') {
-      await this.tryProgressEvent(eventId);
-    }
+for (const booking of acceptedBookings) {
+        await this.progressBookingAndEvent(booking.id, eventId);
+      }
+        }
 
     const message = await this.buildBulkDecisionMessage(eventId, event.eventDate, eventCancelled);
 

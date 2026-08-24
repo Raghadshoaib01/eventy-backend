@@ -3,6 +3,8 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger'
 import { JwtAuthGuard } from 'src/common/guards/jwt-auth.guard';
 import { PaymentsService } from '../payments.service';
 import { CreatePaymentDto } from '../dto/create-payment.dto';
+import { Audit } from 'src/common/decorators/audit.decorator';
+import { AuditAction } from '@prisma/client';
 
 /**
  * Customer-facing Payments API (docs/payments-implementation-plan.md §6.1).
@@ -28,6 +30,7 @@ export class PaymentsController {
   }
 
 @Post(':id/confirm')
+@Audit({ action: AuditAction.UPDATE, entity: 'Payment', entityIdKey: 'id' })
 @ApiParam({ name: 'id', description: 'Payment ID' })
 @ApiOperation({ summary: 'Confirm a payment after client-side Payment Sheet success' })
 confirm(@Request() req, @Param('id') id: string) {

@@ -38,6 +38,8 @@ import { PackagesModule } from './modules/packages/packages.module';
 import { SuggestedPackagesModule } from './modules/suggested-packages/suggested-packages.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { BlockedSlotModule } from './modules/blocked-slots/blocked-slots.module';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { APP_GUARD } from '@nestjs/core';
 
 @Module({
   imports: [
@@ -54,6 +56,9 @@ import { BlockedSlotModule } from './modules/blocked-slots/blocked-slots.module'
       maxListeners: 20,
       verboseMemoryLeak: true,
     }),
+    ThrottlerModule.forRoot([
+      { name: 'default', ttl: 60000, limit: 100 }, // 100 req/min افتراضي
+    ]),
 
     // Firebase Admin SDK (global)
     FirebaseModule,
@@ -119,6 +124,10 @@ import { BlockedSlotModule } from './modules/blocked-slots/blocked-slots.module'
     {
       provide: APP_INTERCEPTOR,
       useClass: ActionTrackingInterceptor,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
     },
   ],
 })

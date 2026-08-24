@@ -122,10 +122,6 @@ const PROVIDERS: ProviderDef[] = [
           { workFromTime: '09:00', workToTime: '22:00', capacity: 1000, hasSlots: false, days: ALL_DAYS },
         ],
         fileUrls:[
-          {url:'https://res.cloudinary.com/dchobrz74/video/upload/v1787171617/4_6036310207900944302_xzizvz.mp4',
-          fileType:FileType.VIDEO ,
-          publicId:'4_6036310207900944302_xzizvz' ,
-          },
           {
         url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787171694/f939a7e77c1d9acef019af3d7f83a43c_krxrdk.jpg',
           fileType:FileType.IMAGE ,
@@ -360,10 +356,6 @@ const PROVIDERS: ProviderDef[] = [
         availability: [{ workFromTime: '10:00', workToTime: '02:00', capacity: 2, hasSlots: false, days: ALL_DAYS }
         ],
         fileUrls:[
-          {url:'https://res.cloudinary.com/dchobrz74/video/upload/v1787175010/4_6036310207900944302_jinfxj.mp4',
-          fileType:FileType.VIDEO ,
-          publicId:'4_6036310207900944302_jinfxj' ,
-          },
           {
         url:'https://res.cloudinary.com/dchobrz74/image/upload/v1787174797/827470221a86461e2b6dbd9948d24c26_kyrtvs.jpg',
           fileType:FileType.IMAGE ,
